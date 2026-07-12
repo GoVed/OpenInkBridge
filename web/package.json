@@ -1,0 +1,30 @@
+{
+  "name": "@openinkbridge/web",
+  "version": "0.1.0",
+  "description": "Unified Web Bridge SDK for E-Ink low-latency stylus drawing",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && npx esbuild src/global.ts --bundle --format=iife --global-name=OpenInkBridge --outfile=dist/index.global.js"
+  },
+  "keywords": [
+    "eink",
+    "stylus",
+    "remarkable",
+    "boox",
+    "bigme",
+    "low-latency",
+    "drawing",
+    "canvas"
+  ],
+  "author": "OpenInkBridge Contributors",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "react": "^18.2.0",
+    "@types/react": "^18.2.0"
+  }
+}

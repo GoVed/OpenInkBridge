@@ -1,0 +1,35 @@
+# Rust / Cargo
+**/target/
+**/*.rs.bk
+Cargo.lock
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+*.so
+!**/jniLibs/**/*.so
+android/jdk17/
+
+# Android Studio / IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Node / npm / JS
+node_modules/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS-specific files
+.DS_Store
+Thumbs.db

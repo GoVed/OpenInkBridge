@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#FFFFFF"
+    android:fitsSystemWindows="true">
+
+    <!-- Control Panel / Toolbar -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:background="#F0F0F0"
+        android:padding="8dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <Button
+                android:id="@+id/btnToggleMode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Switch to WebView Mode"
+                android:textSize="12sp"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnClear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Clear"
+                android:textSize="12sp"
+                android:layout_marginEnd="16dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Color: "
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginEnd="4dp" />
+
+            <View
+                android:id="@+id/btnColorBlack"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="#000000"
+                android:layout_marginEnd="8dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <View
+                android:id="@+id/btnColorRed"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="#FF0000"
+                android:layout_marginEnd="8dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <View
+                android:id="@+id/btnColorBlue"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:background="#0000FF"
+                android:layout_marginEnd="16dp"
+                android:clickable="true"
+                android:focusable="true" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Width: "
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnWidthThin"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Thin"
+                android:textSize="10sp"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnWidthMedium"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Medium"
+                android:textSize="10sp"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btnWidthThick"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Thick"
+                android:textSize="10sp"
+                android:layout_marginEnd="8dp" />
+
+            <CheckBox
+                android:id="@+id/chkStylusOnly"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Stylus Only"
+                android:textSize="10sp"
+                android:checked="true" />
+
+        </LinearLayout>
+    </HorizontalScrollView>
+
+    <!-- Canvas Mount Container -->
+    <FrameLayout
+        android:id="@+id/canvasContainer"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#FFFFFF" />
+
+</LinearLayout>

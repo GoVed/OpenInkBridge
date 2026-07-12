@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenInkBridge Canvas Comparison</title>
+    <style>
+        html, body {
+            overscroll-behavior: none;
+            touch-action: none;
+            overflow: hidden;
+        }
+        body {
+            margin: 0;
+            background-color: #f7f7f7;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+        h1 {
+            color: #222;
+            margin: 15px 0 5px 0;
+            font-size: 24px;
+        }
+        p.subtitle {
+            margin: 0 0 15px 0;
+            color: #666;
+            font-size: 14px;
+        }
+        #controls {
+            margin-bottom: 15px;
+        }
+        button {
+            padding: 8px 20px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background-color: white;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        button:active {
+            background-color: #f0f0f0;
+        }
+        #comparison-container {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            gap: 20px;
+            width: 90%;
+            max-width: 900px;
+            height: 50%;
+        }
+        .canvas-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .canvas-panel h3 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+        }
+        .optimized h3 {
+            color: #28a745;
+        }
+        .traditional h3 {
+            color: #dc3545;
+        }
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            border: 2px solid #ccc;
+            box-sizing: border-box;
+            border-radius: 4px;
+        }
+        .optimized .canvas-wrapper {
+            border-color: #28a745;
+        }
+        .traditional .canvas-wrapper {
+            border-color: #dc3545;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #debug-log {
+            width: 90%;
+            max-width: 900px;
+            height: 120px;
+            overflow-y: auto;
+            background: #222;
+            color: #00FF00;
+            font-family: monospace;
+            padding: 10px;
+            font-size: 11px;
+            margin-top: 15px;
+            text-align: left;
+            box-sizing: border-box;
+            border: 1px solid #444;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>OpenInkBridge Performance Comparison</h1>
+    <p class="subtitle">Draw circles quickly on both screens with your stylus to compare rendering latency and resolution.</p>
+    
+    <div id="controls">
+        <button id="btn-clear">Clear Both Canvases</button>
+        <label id="lbl-stylus-only" style="margin-left: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="chk-stylus-only" style="margin-right: 6px;" checked>
+            Reject Touch (Stylus Only Drawing)
+        </label>
+    </div>
+
+    <div id="comparison-container">
+        <!-- Optimized Canvas Panel -->
+        <div class="canvas-panel optimized">
+            <h3>OpenInkBridge Canvas (Low-Latency Enabled)</h3>
+            <div class="canvas-wrapper" id="opt-wrapper">
+                <canvas id="canvas-opt"></canvas>
+            </div>
+        </div>
+
+        <!-- Traditional Canvas Panel -->
+        <div class="canvas-panel traditional">
+            <h3>Traditional Canvas (Standard Web Latency)</h3>
+            <div class="canvas-wrapper" id="trad-wrapper">
+                <canvas id="canvas-trad"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Log Panel -->
+    <div id="debug-log">
+        [Console] Waiting for logs...<br>
+    </div>
+
+    <!-- Load compiled OpenInkBridge web SDK -->
+    <script src="index.global.js?v=4"></script>
+    <script src="app.js?v=4"></script>
+</body>
+</html>
