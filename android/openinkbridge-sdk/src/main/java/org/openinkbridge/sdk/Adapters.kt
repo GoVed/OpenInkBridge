@@ -444,7 +444,9 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                     touchHelper?.setStrokeWidth(hwWidth)
                     // 5. Color
                     touchHelper?.setStrokeColor(paint.color)
-                    // 6. Enable hardware E-Ink preview rendering
+                    // 6. Enable Finger Touch setting
+                    touchHelper?.enableFingerTouch(!stylusOnly)
+                    // 7. Enable hardware E-Ink preview rendering
                     touchHelper?.setRawDrawingRenderEnabled(true)
                     // 7. Enable Raw Drawing so hardware stylus stroke preview is ready for input immediately
                     touchHelper?.setRawDrawingEnabled(true)
@@ -650,6 +652,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                 touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
                 touchHelper?.setStrokeWidth(hwWidth)
                 touchHelper?.setStrokeColor(color)
+                touchHelper?.enableFingerTouch(!stylusOnly)
                 touchHelper?.setRawDrawingRenderEnabled(true)
                 touchHelper?.setRawDrawingEnabled(true)
                 
@@ -705,6 +708,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                 touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
                 touchHelper?.setStrokeWidth(hwWidth)
                 touchHelper?.setStrokeColor(paint.color)
+                touchHelper?.enableFingerTouch(!stylusOnly)
                 touchHelper?.setRawDrawingRenderEnabled(true)
                 touchHelper?.setRawDrawingEnabled(true)
                 Log.d("OpenInkBridge", "TouchHelper reconfigured with new drawing limit: $rect")

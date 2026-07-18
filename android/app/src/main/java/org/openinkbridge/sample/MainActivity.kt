@@ -15,6 +15,11 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.updatePadding
 import org.openinkbridge.sdk.OpenInkBridgeView
 import org.openinkbridge.sdk.OpenInkBridgeWebView
 import org.openinkbridge.sdk.PenPoint
@@ -30,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private var currentColor = Color.BLACK
     private var currentWidth = 5f
     private var isStylusOnlyMode = true
+    private var isFullscreen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // Bypass Android's non-SDK/hidden API restrictions so Onyx SDK reflection succeeds.
@@ -64,10 +70,24 @@ class MainActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
         
-        // Force window boundaries to match the physical screen permanently, preventing E-Ink scribble bar toggles from resizing the window
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS)
 
         setContentView(R.layout.activity_main)
+
+        val rootLayout = findViewById<View>(R.id.rootLayout)
+        ViewCompat.setOnApplyWindowInsetsListener(rootLayout) { view, windowInsets ->
+            val statusBarTop = windowInsets.getInsets(WindowInsetsCompat.Type.statusBars()).top
+            val sysStatusBarHeight = getStatusBarHeightFallback()
+            val topInset = if (statusBarTop > 0) statusBarTop else sysStatusBarHeight
+            
+            if (!isFullscreen) {
+                view.updatePadding(top = topInset)
+            } else {
+                view.updatePadding(top = 0)
+            }
+            windowInsets
+        }
 
         container = findViewById(R.id.canvasContainer)
 
@@ -158,6 +178,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupToolbar() {
+        val btnFullscreen = findViewById<Button>(R.id.btnToggleFullscreen)
         val btnToggle = findViewById<Button>(R.id.btnToggleMode)
         val btnClear = findViewById<Button>(R.id.btnClear)
         
@@ -191,6 +212,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        btnFullscreen.setOnClickListener {
+            toggleFullscreen()
+        }
+
         btnToggle.setOnClickListener {
             isWebViewMode = !isWebViewMode
             if (isWebViewMode) {
@@ -217,6 +242,35 @@ class MainActivity : AppCompatActivity() {
         widthThin.setOnClickListener { updateWidth(2f) }
         widthMedium.setOnClickListener { updateWidth(5f) }
         widthThick.setOnClickListener { updateWidth(12f) }
+    }
+
+    private fun toggleFullscreen() {
+        isFullscreen = !isFullscreen
+        updateFullscreenState()
+    }
+
+    private fun updateFullscreenState() {
+        val rootLayout = findViewById<View>(R.id.rootLayout)
+        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
+        val btnFullscreen = findViewById<Button>(R.id.btnToggleFullscreen)
+
+        if (isFullscreen) {
+            windowInsetsController.hide(WindowInsetsCompat.Type.statusBars())
+            windowInsetsController.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            rootLayout.updatePadding(top = 0)
+            btnFullscreen?.text = "Exit Fullscreen"
+        } else {
+            windowInsetsController.show(WindowInsetsCompat.Type.statusBars())
+            val sysStatusBarHeight = getStatusBarHeightFallback()
+            rootLayout.updatePadding(top = sysStatusBarHeight)
+            btnFullscreen?.text = "Fullscreen"
+        }
+    }
+
+    private fun getStatusBarHeightFallback(): Int {
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else 0
     }
 
     private fun updateColor(color: Int) {
