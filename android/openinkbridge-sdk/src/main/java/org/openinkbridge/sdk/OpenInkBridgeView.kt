@@ -100,11 +100,10 @@ class OpenInkBridgeView @JvmOverloads constructor(
             return false
         }
 
-        // When TouchHelper is active, it has registered its own OnTouchListener on this view.
-        // We must call super.onTouchEvent so the listener chain fires.
-        // Skip our own manual stroke tracking — TouchHelper collects points via hardware callbacks.
-        if (epdAdapterManager.activeAdapter.isDirectDrawingActive()) {
-            android.util.Log.d("OpenInkBridge", "[VIEW] Routing to super.onTouchEvent for TouchHelper")
+        // When TouchHelper is active AND input is a stylus, TouchHelper handles hardware direct drawing callbacks.
+        // For finger touches (!isStylus), process via standard software stroke rendering below.
+        if (isStylus && epdAdapterManager.activeAdapter.isDirectDrawingActive()) {
+            android.util.Log.d("OpenInkBridge", "[VIEW] Routing to super.onTouchEvent for TouchHelper (Stylus)")
             epdAdapterManager.activeAdapter.onTouchEvent(event)
             super.onTouchEvent(event)
             return true // Consumes the touch stream to receive move/up actions

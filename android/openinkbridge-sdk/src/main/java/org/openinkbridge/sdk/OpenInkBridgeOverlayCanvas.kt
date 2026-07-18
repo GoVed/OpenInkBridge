@@ -51,7 +51,7 @@ class OpenInkBridgeOverlayCanvas(
             return false
         }
 
-        if (epdAdapterManager.activeAdapter.isDirectDrawingActive()) {
+        if (isStylus && epdAdapterManager.activeAdapter.isDirectDrawingActive()) {
             epdAdapterManager.activeAdapter.onTouchEvent(event)
             super.onTouchEvent(event)
             return true // Consumes the touch stream to receive move/up actions
