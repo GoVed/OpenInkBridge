@@ -69,6 +69,11 @@ class FallbackCanvasAdapter : EpdAdapter {
         points.clear()
     }
 
+    override fun setBrushStyle(color: Int, width: Float) {
+        paint.color = color
+        baseWidth = width
+    }
+
     override fun draw(canvas: Canvas) {
         if (points.size < 2) return
         for (i in 0 until points.size - 1) {
@@ -180,6 +185,13 @@ class JetpackInkAdapter : EpdAdapter {
         view = null
         predictor = null
     }
+
+    override fun setBrushStyle(color: Int, width: Float) {
+        paint.color = color
+        paint.strokeWidth = width
+        predictivePaint.color = color
+        predictivePaint.strokeWidth = width
+    }
 }
 
 /**
@@ -208,27 +220,11 @@ class OnyxBooxEpdAdapter : EpdAdapter {
     private var drawingLimitRect: android.graphics.Rect? = null
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private val disableRawDrawingRunnable = Runnable {
-        if (!strokeActive) {
-            try {
-                touchHelper?.setRawDrawingEnabled(false)
-                Log.d("OpenInkBridge", "Proximity timeout: disabled Onyx raw drawing")
-            } catch (e: Exception) {
-                Log.w("OpenInkBridge", "Failed to disable raw drawing in runnable: ${e.message}")
-            }
-        }
-    }
 
     private fun keepRawDrawingActive() {
-        mainHandler.removeCallbacks(disableRawDrawingRunnable)
         try {
             touchHelper?.setRawDrawingEnabled(true)
         } catch (e: Exception) {}
-    }
-
-    private fun scheduleDisableRawDrawing(delayMs: Long = 100) {
-        mainHandler.removeCallbacks(disableRawDrawingRunnable)
-        mainHandler.postDelayed(disableRawDrawingRunnable, delayMs)
     }
 
     // Fallback path drawing when TouchHelper is NOT available (should always be available on Onyx Boox, but good for safety)
@@ -260,6 +256,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
             leaveScribbleModeMethod = epdControllerClass?.getMethod("leaveScribbleMode", View::class.java)
             
             Log.i("OpenInkBridge", "Successfully hooked Onyx Boox EpdController setViewDefaultUpdateMode and scribble modes via reflection")
+            setBooxRefreshMode("DU")
         } catch (e: Exception) {
             Log.w("OpenInkBridge", "Onyx Boox EpdController methods not available: ${e.message}")
         }
@@ -297,6 +294,11 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         }
     }
 
+    private fun getPhysicalHardwareStrokeWidth(logicalWidth: Float): Float {
+        val density = view?.resources?.displayMetrics?.density ?: 1.0f
+        return logicalWidth * density
+    }
+
     private fun initTouchHelper(targetView: View) {
         if (touchHelper != null) return // Already initialized
         
@@ -312,8 +314,10 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                     addOnyxPoint(touchPoint)
                     
                     try {
+                        val hwWidth = getPhysicalHardwareStrokeWidth(baseWidth)
+                        Log.d("OpenInkBridge", "[RAW] applying baseWidth=$baseWidth (hwWidth=$hwWidth), color=${paint.color}")
                         touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
-                        touchHelper?.setStrokeWidth(baseWidth)
+                        touchHelper?.setStrokeWidth(hwWidth)
                         touchHelper?.setStrokeColor(paint.color)
                         drawingLimitRect?.let { rect ->
                             touchHelper?.setLimitRect(rect, ArrayList<android.graphics.Rect>())
@@ -347,7 +351,6 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                         strokeActive = false
                         val finishedStroke = collectedPoints.toMutableList()
                         
-                        // Fix fake pressure spikes at the beginning and end of the stroke
                         // Fix fake pressure spikes at the beginning and end of the stroke
                         if (finishedStroke.size >= 3) {
                             if (finishedStroke[0].pressure > finishedStroke[1].pressure + 0.2f) {
@@ -385,17 +388,13 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                             overlay.post {
                                 overlay.onStrokeCompleted?.invoke(finishedStroke)
                             }
-                            // WebView is active. We want a longer safety timeout (e.g. 1500ms)
-                            // so that the hardware stroke is not cleared prematurely before JS renders.
-                            scheduleDisableRawDrawing(1500)
                         }
 
                         (view as? OpenInkBridgeView)?.let { canvas ->
                             canvas.post {
                                 canvas.addCompletedStroke(finishedStroke)
+                                clearHardwareScribble()
                             }
-                            // Native standalone view is fast. A short delay (e.g. 100ms) is fine.
-                            scheduleDisableRawDrawing(100)
                         }
                     }
                 }
@@ -410,6 +409,12 @@ class OnyxBooxEpdAdapter : EpdAdapter {
             // and the traditional canvas are NOT intercepted by TouchHelper.
             touchHelper = TouchHelper.create(targetView, callback)
             touchHelper!!.enableFingerTouch(!stylusOnly)
+
+            try {
+                // Disable Onyx auto pen-up refresh so OUR software refresh handles handoff
+                val method = touchHelper?.javaClass?.getMethod("setPenUpRefreshEnabled", Boolean::class.javaPrimitiveType)
+                method?.invoke(touchHelper, false)
+            } catch (e: Exception) {}
 
             updateLimitRect(targetView)
             Log.i("OpenInkBridge", "Successfully initialized Onyx Pen SDK TouchHelper directly!")
@@ -435,15 +440,16 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                     // 3. Style
                     touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
                     // 4. Width
-                    touchHelper?.setStrokeWidth(baseWidth)
+                    val hwWidth = getPhysicalHardwareStrokeWidth(baseWidth)
+                    touchHelper?.setStrokeWidth(hwWidth)
                     // 5. Color
                     touchHelper?.setStrokeColor(paint.color)
                     // 6. Enable hardware E-Ink preview rendering
                     touchHelper?.setRawDrawingRenderEnabled(true)
-                    // 7. Enable Raw Drawing: start disabled so other views are responsive
-                    touchHelper?.setRawDrawingEnabled(false)
+                    // 7. Enable Raw Drawing so hardware stylus stroke preview is ready for input immediately
+                    touchHelper?.setRawDrawingEnabled(true)
 
-                    Log.i("OpenInkBridge", "TouchHelper configured: limitRect=$limitRect stylusOnly=$stylusOnly")
+                    Log.i("OpenInkBridge", "TouchHelper configured: limitRect=$limitRect stylusOnly=$stylusOnly hwWidth=$hwWidth")
                 } catch (e: Exception) {
                     Log.w("OpenInkBridge", "Failed to open/configure TouchHelper raw drawing: ${e.message}")
                 }
@@ -503,7 +509,8 @@ class OnyxBooxEpdAdapter : EpdAdapter {
 
         // Update stroke style and limit rect live for the hardware pen renderer
         try {
-            touchHelper?.setStrokeWidth(width)
+            val hwWidth = getPhysicalHardwareStrokeWidth(width)
+            touchHelper?.setStrokeWidth(hwWidth)
             touchHelper?.setStrokeColor(color)
 
             // Find overlay canvas to dynamically set drawing limit rect
@@ -564,7 +571,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         // Just clear live points. TouchHelper stays open.
         collectedPoints.clear()
         processedPoints.clear()
-        setBooxRefreshMode("REGAL") // REGAL handles ghosting after stroke finishes
+        setBooxRefreshMode("DU")
         view?.invalidate()
     }
 
@@ -588,20 +595,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
 
     override fun onTouchEvent(event: MotionEvent) {
         try {
-            val tool = event.getToolType(0)
-            val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
-            if (isStylus) {
-                keepRawDrawingActive()
-                if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-                    scheduleDisableRawDrawing()
-                }
-            } else {
-                if (event.action == MotionEvent.ACTION_DOWN) {
-                    keepRawDrawingActive()
-                } else if (event.action == MotionEvent.ACTION_UP || event.action == MotionEvent.ACTION_CANCEL) {
-                    scheduleDisableRawDrawing()
-                }
-            }
+            keepRawDrawingActive()
             touchHelper?.onTouchEvent(event)
         } catch (e: Exception) {
             Log.w("OpenInkBridge", "Failed to pass touch event to TouchHelper: ${e.message}")
@@ -612,14 +606,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         val tool = event.getToolType(0)
         val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
         if (isStylus) {
-            when (event.action) {
-                MotionEvent.ACTION_HOVER_ENTER, MotionEvent.ACTION_HOVER_MOVE -> {
-                    keepRawDrawingActive()
-                }
-                MotionEvent.ACTION_HOVER_EXIT -> {
-                    scheduleDisableRawDrawing()
-                }
-            }
+            keepRawDrawingActive()
             return true
         }
         return false
@@ -635,17 +622,47 @@ class OnyxBooxEpdAdapter : EpdAdapter {
     }
 
     override fun release() {
-        mainHandler.removeCallbacks(disableRawDrawingRunnable)
         endStroke()
+        try {
+            touchHelper?.setRawDrawingEnabled(false)
+        } catch (e: Exception) {}
         view = null
+    }
+
+    override fun setBrushStyle(color: Int, width: Float) {
+        paint.color = color
+        baseWidth = width
+        android.util.Log.d("OpenInkBridge", "OnyxBooxEpdAdapter.setBrushStyle: color=$color, width=$width, touchHelper=${touchHelper != null}")
+        try {
+            if (touchHelper != null && view != null) {
+                val targetView = view!!
+                val limitRect = android.graphics.Rect()
+                targetView.getLocalVisibleRect(limitRect)
+                
+                touchHelper?.closeRawDrawing()
+                touchHelper?.openRawDrawing()
+                
+                if (limitRect.width() > 0 && limitRect.height() > 0) {
+                    touchHelper?.setLimitRect(limitRect, emptyList())
+                }
+                
+                val hwWidth = getPhysicalHardwareStrokeWidth(width)
+                touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
+                touchHelper?.setStrokeWidth(hwWidth)
+                touchHelper?.setStrokeColor(color)
+                touchHelper?.setRawDrawingRenderEnabled(true)
+                touchHelper?.setRawDrawingEnabled(true)
+                
+                android.util.Log.d("OpenInkBridge", "TouchHelper reconfigured with width=$width (hwWidth=$hwWidth), color=$color")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("OpenInkBridge", "Failed to update touchHelper stroke properties: ${e.message}")
+        }
     }
 
     override fun isDirectDrawingActive(): Boolean = touchHelper != null
 
     override fun setRawDrawingEnabled(enabled: Boolean) {
-        if (!enabled) {
-            mainHandler.removeCallbacks(disableRawDrawingRunnable)
-        }
         try {
             touchHelper?.setRawDrawingEnabled(enabled)
             Log.d("OpenInkBridge", "Onyx hardware raw drawing enabled: $enabled")
@@ -655,21 +672,42 @@ class OnyxBooxEpdAdapter : EpdAdapter {
     }
 
     override fun clearHardwareScribble() {
-        mainHandler.removeCallbacks(disableRawDrawingRunnable)
-        if (!strokeActive) {
-            setRawDrawingEnabled(false)
-            setRawDrawingEnabled(true)
-            Log.d("OpenInkBridge", "Cleared Onyx hardware scribble via JS trigger")
+        mainHandler.post {
+            try {
+                val targetView = view ?: return@post
+                // Trigger fast E-Ink refresh to display the rendered software canvas frame
+                val duEnum = java.lang.Enum.valueOf(epdModeEnumClass as Class<out Enum<*>>, "DU")
+                applyModeMethod?.invoke(null, targetView, duEnum)
+
+                val refreshMethod = epdControllerClass?.getMethod("refreshScreen", View::class.java, epdModeEnumClass)
+                refreshMethod?.invoke(null, targetView, duEnum)
+
+                targetView.invalidate()
+                Log.d("OpenInkBridge", "Onyx hardware scribble handoff: triggered EPD refresh and view invalidation")
+            } catch (e: Exception) {
+                Log.w("OpenInkBridge", "Failed to refresh EPD in clearHardwareScribble: ${e.message}")
+            }
         }
     }
 
     override fun setDrawingLimit(rect: android.graphics.Rect?) {
         drawingLimitRect = rect
         try {
-            if (rect != null) {
-                touchHelper?.setLimitRect(rect, ArrayList<android.graphics.Rect>())
-            } else {
-                touchHelper?.setLimitRect(null as android.graphics.Rect?, null)
+            if (touchHelper != null) {
+                touchHelper?.closeRawDrawing()
+                touchHelper?.openRawDrawing()
+                if (rect != null) {
+                    touchHelper?.setLimitRect(rect, ArrayList<android.graphics.Rect>())
+                } else {
+                    touchHelper?.setLimitRect(null as android.graphics.Rect?, null)
+                }
+                val hwWidth = getPhysicalHardwareStrokeWidth(baseWidth)
+                touchHelper?.setStrokeStyle(TouchHelper.STROKE_STYLE_FOUNTAIN)
+                touchHelper?.setStrokeWidth(hwWidth)
+                touchHelper?.setStrokeColor(paint.color)
+                touchHelper?.setRawDrawingRenderEnabled(true)
+                touchHelper?.setRawDrawingEnabled(true)
+                Log.d("OpenInkBridge", "TouchHelper reconfigured with new drawing limit: $rect")
             }
         } catch (e: Exception) {
             Log.w("OpenInkBridge", "Failed to set Onyx drawing limit: ${e.message}")
@@ -761,4 +799,9 @@ class BigmeEpdAdapter : EpdAdapter {
     override fun triggerFullRefresh() {}
     override fun setRefreshMode(mode: EInkRefreshMode) {}
     override fun release() { view = null }
+
+    override fun setBrushStyle(color: Int, width: Float) {
+        paint.color = color
+        paint.strokeWidth = width
+    }
 }

@@ -40,6 +40,7 @@ class OpenInkBridgeOverlayCanvas(
     fun configureStroke(color: Int, width: Float) {
         this.strokeColor = color
         this.strokeWidth = width
+        epdAdapterManager.activeAdapter.setBrushStyle(color, width)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

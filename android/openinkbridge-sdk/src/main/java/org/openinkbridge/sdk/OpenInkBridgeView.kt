@@ -27,7 +27,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
 
 
     private val strokePoints = mutableListOf<PenPoint>()
-    private val completedStrokes = mutableListOf<List<PenPoint>>()
+    private val completedStrokes = mutableListOf<DrawingStroke>()
     
     private var strokeColor = Color.BLACK
     private var strokeWidth = 5f
@@ -57,6 +57,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
     fun setBrushStyle(color: Int, width: Float) {
         this.strokeColor = color
         this.strokeWidth = width
+        epdAdapterManager.activeAdapter.setBrushStyle(color, width)
         invalidate()
     }
 
@@ -68,7 +69,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
     }
 
     fun addCompletedStroke(stroke: List<PenPoint>) {
-        completedStrokes.add(stroke)
+        completedStrokes.add(DrawingStroke(stroke, strokeColor, strokeWidth))
         invalidate()
         onStrokeCompleted?.invoke(stroke)
     }
@@ -78,6 +79,10 @@ class OpenInkBridgeView @JvmOverloads constructor(
     fun setStylusOnly(enabled: Boolean) {
         this.stylusOnly = enabled
         epdAdapterManager.activeAdapter.setStylusOnly(enabled)
+    }
+
+    fun setRawDrawingEnabled(enabled: Boolean) {
+        epdAdapterManager.activeAdapter.setRawDrawingEnabled(enabled)
     }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -154,9 +159,8 @@ class OpenInkBridgeView @JvmOverloads constructor(
                     epdAdapterManager.activeAdapter.drawPoint(point)
                     epdAdapterManager.activeAdapter.endStroke()
 
-                    // Apply JNI / optimized CoreBridge stroke smoothing
                     val smoothedStroke = CoreBridge.smoothStroke(strokePoints)
-                    completedStrokes.add(smoothedStroke)
+                    completedStrokes.add(DrawingStroke(smoothedStroke, strokeColor, strokeWidth))
                     
                     onStrokeCompleted?.invoke(smoothedStroke)
                     strokePoints.clear()
@@ -183,15 +187,14 @@ class OpenInkBridgeView @JvmOverloads constructor(
         canvas.drawColor(Color.WHITE)
 
         // Draw all finalized vector strokes
-        renderPaint.color = strokeColor
-        
         for (stroke in completedStrokes) {
-            if (stroke.size < 2) continue
-            for (i in 0 until stroke.size - 1) {
-                val p1 = stroke[i]
-                val p2 = stroke[i + 1]
+            if (stroke.points.size < 2) continue
+            renderPaint.color = stroke.color
+            for (i in 0 until stroke.points.size - 1) {
+                val p1 = stroke.points[i]
+                val p2 = stroke.points[i + 1]
                 val avgPressure = (p1.pressure + p2.pressure) / 2f
-                val width = strokeWidth * (0.6f + 0.8f * avgPressure)
+                val width = stroke.width * (0.3f + 1.4f * avgPressure)
                 renderPaint.strokeWidth = width
                 canvas.drawLine(p1.x, p1.y, p2.x, p2.y, renderPaint)
             }
@@ -227,14 +230,14 @@ class OpenInkBridgeView @JvmOverloads constructor(
         val sb = StringBuilder()
         sb.append("<svg viewBox=\"0 0 $width $height\" xmlns=\"http://www.w3.org/2000/svg\">\n")
         
-        val hexColor = String.format("#%06X", 0xFFFFFF and strokeColor)
         for (stroke in completedStrokes) {
-            if (stroke.size < 2) continue
-            sb.append("  <path d=\"M ${stroke[0].x} ${stroke[0].y}")
-            for (i in 1 until stroke.size) {
-                sb.append(" L ${stroke[i].x} ${stroke[i].y}")
+            if (stroke.points.size < 2) continue
+            val hexColor = String.format("#%06X", 0xFFFFFF and stroke.color)
+            sb.append("  <path d=\"M ${stroke.points[0].x} ${stroke.points[0].y}")
+            for (i in 1 until stroke.points.size) {
+                sb.append(" L ${stroke.points[i].x} ${stroke.points[i].y}")
             }
-            sb.append("\" stroke=\"$hexColor\" stroke-width=\"$strokeWidth\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n")
+            sb.append("\" stroke=\"$hexColor\" stroke-width=\"${stroke.width}\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\" />\n")
         }
         
         sb.append("</svg>")

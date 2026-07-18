@@ -56,6 +56,11 @@ interface EpdAdapter {
     fun release()
 
     /**
+     * Update active brush/stroke style dynamically.
+     */
+    fun setBrushStyle(color: Int, width: Float) {}
+
+    /**
      * Checks if the adapter handles hardware-level direct drawing.
      */
     fun isDirectDrawingActive(): Boolean = false

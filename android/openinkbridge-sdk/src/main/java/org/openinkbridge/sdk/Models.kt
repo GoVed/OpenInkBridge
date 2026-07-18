@@ -17,3 +17,9 @@ enum class EInkRefreshMode {
     QUALITY,    // High quality, slow - ideal for viewing text/details
     BALANCED    // Middle ground
 }
+
+data class DrawingStroke(
+    val points: List<PenPoint>,
+    val color: Int,
+    val width: Float
+)
