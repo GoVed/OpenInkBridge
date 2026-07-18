@@ -37,10 +37,22 @@ To achieve low-latency drawing on E-Ink displays, OpenInkBridge uses a **Hybrid 
 * **[`web/`](./web)** - Web Integration package (`@openinkbridge/web`) for HTML5 Canvas/SVG synchronization.
 * **[`linux/`](./linux)** - Linux native drivers (for reMarkable and Kobo tablets).
 
-## Getting Started
+## Features & Highlights
+
+* **Multi-Vendor Hardware Acceleration:** Automatic reflection-based hardware binding for Onyx Boox Pen SDK (TouchHelper / EpdController), Bigme Low-Latency API, and Android Jetpack Ink / MotionEventPredictor.
+* **Hybrid Touch Routing & Focus Handoff:** Seamlessly toggles hardware raw drawing scribbles when drawing inside low-latency regions, while instantly yielding display refresh control for standard/traditional views and UI components.
+* **Vector Path & Style Persistence:** Supports per-stroke color, width, and pressure-aware vector rendering with export options to Bitmap and SVG.
+* **Cross-Platform Math Core:** Double Exponential Smoothing and Ramer-Douglas-Peucker path simplification powered by shared Rust/Wasm/JNI algorithms.
+
+## Documentation
 
 Refer to the integration guides for instructions on how to compile, build, and run OpenInkBridge for each platform:
 * **[Documentation Index](./docs/INDEX.md)**
 * **[Web & WebApp Integration Guide](./docs/WEB_INTEGRATION.md)**
 * **[Android SDK Integration Guide](./docs/ANDROID_INTEGRATION.md)**
 * **[Linux Native Client Integration Guide](./docs/LINUX_INTEGRATION.md)**
+
+## License
+
+OpenInkBridge is licensed under the **[Apache License, Version 2.0](./LICENSE)**. You are free to use, modify, sublicense, and distribute this SDK for both open-source and commercial applications.
+

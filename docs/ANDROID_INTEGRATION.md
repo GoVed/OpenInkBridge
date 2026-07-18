@@ -115,7 +115,20 @@ override fun onDetachedFromWindow() {
 
 ---
 
-## 6. Compiling the Rust Crate for JNI
+---
+
+## 6. Hardware Touch Handoff & Focus Management
+
+When Onyx direct hardware drawing (`TouchHelper.setRawDrawingEnabled(true)`) is active, standard Android view invalidations outside the low-latency drawing bounds are held by the vendor's EPD driver.
+
+To ensure non-direct drawing areas (such as traditional whiteboard canvases or native UI toolbars) update smoothly in real time:
+
+1. **`dispatchTouchEvent` Auto-Handoff:** `OpenInkBridgeWebView` automatically checks `ACTION_DOWN` coordinates. When a touch begins outside the low-latency canvas, hardware raw drawing is paused (`setRawDrawingEnabled(false)`), allowing normal Android view updates and EPD screen refreshes to proceed without lag.
+2. **Re-Enabling Direct Mode:** When a touch begins inside `OpenInkBridgeView` or `OpenInkBridgeOverlayCanvas`, direct hardware raw drawing is immediately re-enabled.
+
+---
+
+## 7. Compiling the Rust Crate for JNI
 
 To update the native stroke smoothing calculation library:
 
@@ -133,3 +146,4 @@ To update the native stroke smoothing calculation library:
    cargo ndk -t arm64-v8a -p 21 -- build --release --features android
    ```
 4. Copy the compiled JNI binary output (`libopeninkbridge_core.so`) into `openinkbridge-sdk/src/main/jniLibs/arm64-v8a/`.
+
