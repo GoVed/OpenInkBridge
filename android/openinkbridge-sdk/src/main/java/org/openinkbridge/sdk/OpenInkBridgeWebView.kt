@@ -24,6 +24,9 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
         epdAdapterManager = EpdAdapterManager(this)
 
         webView.settings.javaScriptEnabled = true
+        webView.settings.domStorageEnabled = true
+        webView.settings.useWideViewPort = true
+        webView.settings.loadWithOverviewMode = true
         webView.settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
         webView.settings.userAgentString = webView.settings.userAgentString + " OpenInkBridge/" + android.os.Build.BRAND + " " + android.os.Build.MANUFACTURER
         webView.addJavascriptInterface(OpenInkBridgeJSInterface(), "OpenInkBridgeNative")
@@ -169,6 +172,27 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
             array.put(obj)
         }
         return array.toString()
+    }
+
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (ev.action == android.view.MotionEvent.ACTION_DOWN) {
+            overlayCanvas?.let { overlay ->
+                if (overlay.visibility == VISIBLE) {
+                    val loc = IntArray(2)
+                    overlay.getLocationOnScreen(loc)
+                    val rect = android.graphics.Rect(loc[0], loc[1], loc[0] + overlay.width, loc[1] + overlay.height)
+                    val isInsideOverlay = rect.contains(ev.rawX.toInt(), ev.rawY.toInt())
+                    
+                    if (isInsideOverlay) {
+                        epdAdapterManager.activeAdapter.setRawDrawingEnabled(true)
+                    } else {
+                        epdAdapterManager.activeAdapter.setRawDrawingEnabled(false)
+                        epdAdapterManager.activeAdapter.clearHardwareScribble()
+                    }
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onAttachedToWindow() {

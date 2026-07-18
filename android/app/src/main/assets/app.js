@@ -52,9 +52,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const isCompatible = detectEInkDevice() !== "Standard Screen (PC/Mobile)";
     chkStylusOnly.checked = isCompatible;
 
+    let currentStrokeWidth = 4;
+
     const osCanvas = new OpenInkBridgeCanvasClass(canvasOpt, {
         strokeColor: "#28a745", // Green
-        strokeWidth: 4,
+        strokeWidth: currentStrokeWidth,
         smoothing: true,
         stylusOnly: chkStylusOnly.checked
     });
@@ -63,9 +65,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     chkStylusOnly.addEventListener("change", () => {
         const isChecked = chkStylusOnly.checked;
-        osCanvas.setStyle("#28a745", 4, isChecked);
+        osCanvas.setStyle("#28a745", currentStrokeWidth, isChecked);
         log(`Stylus Only Mode toggled: ${isChecked ? "ENABLED (palm rejection active)" : "DISABLED (touch drawing active)"}`);
     });
+
+    // Expose a helper to update stroke width from Android WebView host
+    window.setStrokeWidth = function(width) {
+        currentStrokeWidth = width;
+        if (osCanvas) {
+            osCanvas.setStyle("#28a745", width, chkStylusOnly.checked);
+        }
+    };
 
     // -------------------------------------------------------------
     // 2. Initialize Traditional Canvas (Standard Whiteboard)
@@ -109,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const pressure = e.pressure || 0.5;
 
         const avgPressure = (lastPointTrad.pressure + pressure) / 2;
-        const width = 4 * (0.3 + 1.4 * avgPressure);
+        const width = currentStrokeWidth * (0.3 + 1.4 * avgPressure);
         ctxTrad.lineWidth = width;
         
         ctxTrad.beginPath();
@@ -118,6 +128,10 @@ document.addEventListener("DOMContentLoaded", () => {
         ctxTrad.stroke();
 
         lastPointTrad = { x, y, pressure };
+
+        if (window.OpenInkBridgeNative && window.OpenInkBridgeNative.onStrokeDrawn) {
+            window.OpenInkBridgeNative.onStrokeDrawn();
+        }
     });
 
     canvasTrad.addEventListener("pointerup", () => {
@@ -125,6 +139,9 @@ document.addEventListener("DOMContentLoaded", () => {
             isDrawingTrad = false;
             lastPointTrad = null;
             log("Traditional: stroke finished.");
+            if (window.OpenInkBridgeNative && window.OpenInkBridgeNative.onStrokeDrawn) {
+                window.OpenInkBridgeNative.onStrokeDrawn();
+            }
         }
     });
 

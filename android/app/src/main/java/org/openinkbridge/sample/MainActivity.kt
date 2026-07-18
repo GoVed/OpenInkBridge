@@ -92,6 +92,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.action == MotionEvent.ACTION_DOWN) {
+            nativeViewOpt?.let { optView ->
+                val loc = IntArray(2)
+                optView.getLocationOnScreen(loc)
+                val rect = android.graphics.Rect(loc[0], loc[1], loc[0] + optView.width, loc[1] + optView.height)
+                val isInsideOpt = rect.contains(ev.rawX.toInt(), ev.rawY.toInt())
+                
+                android.util.Log.d("OpenInkBridge", "[MAIN_DISPATCH] ACTION_DOWN raw(${ev.rawX}, ${ev.rawY}) isInsideOpt=$isInsideOpt rect=$rect")
+                if (isInsideOpt) {
+                    optView.setRawDrawingEnabled(true)
+                } else {
+                    optView.setRawDrawingEnabled(false)
+                }
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
@@ -210,6 +229,12 @@ class MainActivity : AppCompatActivity() {
         currentWidth = width
         nativeViewOpt?.setBrushStyle(currentColor, currentWidth)
         nativeViewTrad?.setBrushStyle(currentColor, currentWidth)
+        if (isWebViewMode) {
+            webView?.webView?.evaluateJavascript(
+                "if (window.setStrokeWidth) { window.setStrokeWidth($currentWidth); }",
+                null
+            )
+        }
     }
 
     private fun showNativeCanvas() {
@@ -278,6 +303,20 @@ class MainActivity : AppCompatActivity() {
         webView = OpenInkBridgeWebView(this)
         container.addView(webView)
         
+        webView?.webView?.webViewClient = object : android.webkit.WebViewClient() {
+            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                webView?.webView?.evaluateJavascript(
+                    "if (window.setStrokeWidth) { window.setStrokeWidth($currentWidth); }",
+                    null
+                )
+                webView?.webView?.evaluateJavascript(
+                    "const chk = document.getElementById('chk-stylus-only'); if (chk && chk.checked !== $isStylusOnlyMode) { chk.checked = $isStylusOnlyMode; chk.dispatchEvent(new Event('change')); }",
+                    null
+                )
+            }
+        }
+        
         webView?.webView?.loadUrl("file:///android_asset/sample_web_app.html")
     }
 
@@ -305,6 +344,35 @@ class MainActivity : AppCompatActivity() {
 }
 
 class TraditionalDrawingView(context: Context) : View(context) {
+    private var epdClass: Class<*>? = null
+    private var epdModeEnumClass: Class<*>? = null
+    private var refreshMethod: java.lang.reflect.Method? = null
+    private var duMode: Any? = null
+
+    init {
+        try {
+            epdClass = Class.forName("com.onyx.android.sdk.api.device.epd.EpdController")
+            epdModeEnumClass = Class.forName("com.onyx.android.sdk.api.device.epd.UpdateMode")
+            @Suppress("UNCHECKED_CAST")
+            duMode = java.lang.Enum.valueOf(epdModeEnumClass as Class<out Enum<*>>, "DU")
+            
+            val applyModeMethod = epdClass?.getMethod("setViewDefaultUpdateMode", View::class.java, epdModeEnumClass)
+            applyModeMethod?.invoke(null, this, duMode)
+            
+            refreshMethod = epdClass?.getMethod("refreshScreen", View::class.java, epdModeEnumClass)
+        } catch (e: Exception) {
+            android.util.Log.w("OpenInkBridge", "TraditionalDrawingView EpdController setup failed: ${e.message}")
+        }
+    }
+
+    private fun refreshEpd() {
+        try {
+            val applyModeMethod = epdClass?.getMethod("setViewDefaultUpdateMode", View::class.java, epdModeEnumClass)
+            applyModeMethod?.invoke(null, this, duMode)
+            refreshMethod?.invoke(null, this, duMode)
+        } catch (e: Exception) {}
+    }
+
     private val strokes = mutableListOf<MutableList<PenPoint>>()
     private var currentStroke = mutableListOf<PenPoint>()
     private var baseWidth = 5f
@@ -334,8 +402,12 @@ class TraditionalDrawingView(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 currentStroke.add(pt)
             }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                currentStroke.add(pt)
+            }
         }
         invalidate()
+        refreshEpd()
         return true
     }
 
@@ -358,11 +430,13 @@ class TraditionalDrawingView(context: Context) : View(context) {
         strokes.clear()
         currentStroke.clear()
         invalidate()
+        refreshEpd()
     }
     
     fun setBrushStyle(color: Int, width: Float) {
         paint.color = color
         baseWidth = width
         invalidate()
+        refreshEpd()
     }
 }
