@@ -3,6 +3,7 @@ name: Build Android Sample App
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
@@ -10,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +37,21 @@ jobs:
         with:
           name: OpenInkBridge-SampleApp-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Create GitHub Pre-Release & Upload APK
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: android/app/build/outputs/apk/debug/app-debug.apk
+          prerelease: true
+          title: "OpenInkBridge Sample App ${{ github.ref_name }}"
+          body: |
+            ## OpenInkBridge Sample App ${{ github.ref_name }}
+            
+            Pre-built test APK for E-Ink Android devices (Onyx Boox, Bigme, etc.).
+            
+            ### Installation Instructions:
+            1. Download `app-debug.apk` below directly to your E-Ink tablet.
+            2. Open **Storage / File Manager** on your device and tap `app-debug.apk` to install.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
