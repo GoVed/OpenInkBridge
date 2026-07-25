@@ -76,11 +76,12 @@ class FallbackCanvasAdapter : EpdAdapter {
 
     override fun draw(canvas: Canvas) {
         if (points.size < 2) return
+        val density = view?.resources?.displayMetrics?.density ?: 1.0f
         for (i in 0 until points.size - 1) {
             val p1 = points[i]
             val p2 = points[i + 1]
             val avgPressure = (p1.pressure + p2.pressure) / 2f
-            val width = baseWidth * (0.3f + 1.4f * avgPressure)
+            val width = (baseWidth * density * avgPressure).coerceAtLeast(0.5f)
             paint.strokeWidth = width
             canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paint)
         }
@@ -558,11 +559,12 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         // In fallback mode, render fallbackPoints.
         if (touchHelper == null) {
             if (fallbackPoints.size < 2) return
+            val density = view?.resources?.displayMetrics?.density ?: 1.0f
             for (i in 0 until fallbackPoints.size - 1) {
                 val p1 = fallbackPoints[i]
                 val p2 = fallbackPoints[i + 1]
                 val avgPressure = (p1.pressure + p2.pressure) / 2f
-                val width = baseWidth * (0.3f + 1.4f * avgPressure).coerceAtLeast(0.5f)
+                val width = (baseWidth * density * avgPressure).coerceAtLeast(0.5f)
                 paint.strokeWidth = width
                 canvas.drawLine(p1.x, p1.y, p2.x, p2.y, paint)
             }

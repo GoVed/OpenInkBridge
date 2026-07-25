@@ -119,7 +119,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const pressure = e.pressure || 0.5;
 
         const avgPressure = (lastPointTrad.pressure + pressure) / 2;
-        const width = currentStrokeWidth * (0.3 + 1.4 * avgPressure);
+        const width = Math.max(0.5, currentStrokeWidth * avgPressure);
         ctxTrad.lineWidth = width;
         
         ctxTrad.beginPath();

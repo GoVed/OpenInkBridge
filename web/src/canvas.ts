@@ -123,7 +123,7 @@ export class OpenInkBridgeCanvas {
             this.liveUnsubscribeUpdate = openInkBridge.onStrokeUpdated((point) => {
                 if (lastPoint) {
                     const avgPressure = (lastPoint.pressure + point.pressure) / 2;
-                    const width = this.options.strokeWidth * (0.3 + 1.4 * avgPressure);
+                    const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
                     this.ctx.lineWidth = width;
                     this.ctx.beginPath();
                     this.ctx.moveTo(lastPoint.x, lastPoint.y);
@@ -254,15 +254,17 @@ export class OpenInkBridgeCanvas {
         if (points.length < 2) return;
 
         this.ctx.strokeStyle = this.options.strokeColor;
+        const totalSegments = points.length - 1;
         
-        for (let i = 0; i < points.length - 1; i++) {
+        for (let i = 0; i < totalSegments; i++) {
             const p1 = points[i];
             const p2 = points[i + 1];
             
             const avgPressure = (p1.pressure + p2.pressure) / 2;
-            const width = this.options.strokeWidth * (0.3 + 1.4 * avgPressure);
+            const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
             
             this.ctx.lineWidth = width;
+            this.ctx.lineCap = (totalSegments === 1 || i === 0 || i === totalSegments - 1) ? 'round' : 'butt';
             this.ctx.beginPath();
             this.ctx.moveTo(p1.x, p1.y);
             this.ctx.lineTo(p2.x, p2.y);

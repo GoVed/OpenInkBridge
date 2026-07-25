@@ -185,6 +185,8 @@ class OpenInkBridgeView @JvmOverloads constructor(
         // Clear canvas with white background
         canvas.drawColor(Color.WHITE)
 
+        val density = resources.displayMetrics.density
+
         // Draw all finalized vector strokes
         for (stroke in completedStrokes) {
             if (stroke.points.size < 2) continue
@@ -193,7 +195,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
                 val p1 = stroke.points[i]
                 val p2 = stroke.points[i + 1]
                 val avgPressure = (p1.pressure + p2.pressure) / 2f
-                val width = stroke.width * (0.3f + 1.4f * avgPressure)
+                val width = (stroke.width * density * avgPressure).coerceAtLeast(0.5f)
                 renderPaint.strokeWidth = width
                 canvas.drawLine(p1.x, p1.y, p2.x, p2.y, renderPaint)
             }

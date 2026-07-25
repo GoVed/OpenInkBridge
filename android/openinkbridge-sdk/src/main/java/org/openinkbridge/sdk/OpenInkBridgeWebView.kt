@@ -72,6 +72,9 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
         }
     }
 
+    private var overlayLeftPx = 0f
+    private var overlayTopPx = 0f
+
     private fun enableOverlay(color: Int, width: Float, rectObj: JSONObject?, stylusOnly: Boolean) {
         if (overlayCanvas == null) {
             overlayCanvas = OpenInkBridgeOverlayCanvas(context, epdAdapterManager).apply {
@@ -97,9 +100,12 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
             val h = rectObj.optDouble("height", 0.0).toFloat()
             
             val density = context.resources.displayMetrics.density
-            val lp = LayoutParams((w * density).toInt(), (h * density).toInt()).apply {
-                leftMargin = (left * density).toInt()
-                topMargin = (top * density).toInt()
+            overlayLeftPx = left * density
+            overlayTopPx = top * density
+
+            val lp = LayoutParams(Math.round(w * density), Math.round(h * density)).apply {
+                leftMargin = Math.round(overlayLeftPx)
+                topMargin = Math.round(overlayTopPx)
             }
             overlayCanvas?.layoutParams = lp
             
@@ -111,6 +117,8 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
             )
             epdAdapterManager.activeAdapter.setDrawingLimit(limitRect)
         } else {
+            overlayLeftPx = 0f
+            overlayTopPx = 0f
             overlayCanvas?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
             epdAdapterManager.activeAdapter.setDrawingLimit(null)
         }
@@ -147,20 +155,15 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
 
     private fun strokePointsToJson(points: List<PenPoint>): String {
         val density = context.resources.displayMetrics.density
-        val lp = overlayCanvas?.layoutParams as? FrameLayout.LayoutParams
-        val leftMargin = lp?.leftMargin ?: 0
-        val topMargin = lp?.topMargin ?: 0
 
         val array = JSONArray()
         for (p in points) {
             // Convert WebView-relative physical coordinates to canvas-local coordinates (in CSS pixels)
-            val localX = p.x - leftMargin
-            val localY = p.y - topMargin
+            val localX = p.x - overlayLeftPx
+            val localY = p.y - overlayTopPx
 
-            // Apply a minor 2.0 CSS pixels (approx. 4 physical pixels) calibration offset
-            // to correct for the WebView layout/scrollbar viewport rendering shift.
-            val docX = (localX / density) - 2.0f
-            val docY = (localY / density) - 2.0f
+            val docX = localX / density
+            val docY = localY / density
 
             val obj = JSONObject().apply {
                 put("x", docX.toDouble())

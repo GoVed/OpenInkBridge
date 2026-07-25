@@ -45,56 +45,31 @@ pub fn simplify_stroke(points: &[Point], epsilon: f32) -> Vec<Point> {
     }
 }
 
-/// Smooths a list of points using Double Exponential Smoothing.
-/// This balances jitter reduction without introducing drawing lag.
-pub fn smooth_stroke_des(points: &[Point], alpha: f32, beta: f32) -> Vec<Point> {
-    if points.len() < 2 {
+/// Smooths a list of points using a zero-phase symmetric weighted filter (0.25, 0.50, 0.25).
+/// This removes digitizer sensor jitter without causing positional shift or curve drift.
+pub fn smooth_stroke_zero_phase(points: &[Point]) -> Vec<Point> {
+    if points.len() < 3 {
         return points.to_vec();
     }
 
     let mut smoothed = Vec::with_capacity(points.len());
-
-    let mut s_x = points[0].x;
-    let mut b_x = points[1].x - points[0].x;
-
-    let mut s_y = points[0].y;
-    let mut b_y = points[1].y - points[0].y;
-
-    let mut s_p = points[0].pressure;
-    let mut b_p = points[1].pressure - points[0].pressure;
-
-    let mut s_t = points[0].tilt;
-    let mut b_t = points[1].tilt - points[0].tilt;
-
     smoothed.push(points[0]);
 
-    for i in 1..points.len() {
-        let p = &points[i];
-
-        let s_x_new = alpha * p.x + (1.0 - alpha) * (s_x + b_x);
-        let s_y_new = alpha * p.y + (1.0 - alpha) * (s_y + b_y);
-        let s_p_new = alpha * p.pressure + (1.0 - alpha) * (s_p + b_p);
-        let s_t_new = alpha * p.tilt + (1.0 - alpha) * (s_t + b_t);
-
-        b_x = beta * (s_x_new - s_x) + (1.0 - beta) * b_x;
-        b_y = beta * (s_y_new - s_y) + (1.0 - beta) * b_y;
-        b_p = beta * (s_p_new - s_p) + (1.0 - beta) * b_p;
-        b_t = beta * (s_t_new - s_t) + (1.0 - beta) * b_t;
-
-        s_x = s_x_new;
-        s_y = s_y_new;
-        s_p = s_p_new;
-        s_t = s_t_new;
+    for i in 1..points.len() - 1 {
+        let p_prev = &points[i - 1];
+        let p_curr = &points[i];
+        let p_next = &points[i + 1];
 
         smoothed.push(Point {
-            x: s_x,
-            y: s_y,
-            pressure: s_p,
-            tilt: s_t,
-            timestamp: p.timestamp,
+            x: 0.25 * p_prev.x + 0.50 * p_curr.x + 0.25 * p_next.x,
+            y: 0.25 * p_prev.y + 0.50 * p_curr.y + 0.25 * p_next.y,
+            pressure: 0.25 * p_prev.pressure + 0.50 * p_curr.pressure + 0.25 * p_next.pressure,
+            tilt: 0.25 * p_prev.tilt + 0.50 * p_curr.tilt + 0.25 * p_next.tilt,
+            timestamp: p_curr.timestamp,
         });
     }
 
+    smoothed.push(points[points.len() - 1]);
     smoothed
 }
 
@@ -103,8 +78,8 @@ pub fn smooth_stroke(points: &[Point]) -> Vec<Point> {
     if points.is_empty() {
         return Vec::new();
     }
-    // 1. Smooth the points to remove hand jitter and sensor noise
-    smooth_stroke_des(points, 0.65, 0.25)
+    // Smooth points using zero-phase filter to prevent positional offset
+    smooth_stroke_zero_phase(points)
 }
 
 #[cfg(feature = "wasm")]
