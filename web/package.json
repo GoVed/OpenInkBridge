@@ -1,6 +1,6 @@
 {
   "name": "@openinkbridge/web",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified Web Bridge SDK for E-Ink low-latency stylus drawing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
