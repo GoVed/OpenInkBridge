@@ -14,7 +14,7 @@ data class CapabilitiesReport(
 )
 
 data class DiagnosticsData(
-    val version: String = "0.1.1",
+    val version: String = "0.1.2",
     val platform: String = "Android SDK",
     val osVersion: String = Build.VERSION.RELEASE,
     val apiLevel: Int = Build.VERSION.SDK_INT,
@@ -95,7 +95,7 @@ object OpenInkBridgeDiagnostics {
         }
 
         return DiagnosticsData(
-            version = "0.1.1",
+            version = "0.1.2",
             platform = "Android SDK",
             osVersion = Build.VERSION.RELEASE,
             apiLevel = Build.VERSION.SDK_INT,
