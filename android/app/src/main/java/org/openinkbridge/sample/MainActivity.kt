@@ -23,6 +23,10 @@ import androidx.core.view.updatePadding
 import org.openinkbridge.sdk.OpenInkBridgeView
 import org.openinkbridge.sdk.OpenInkBridgeWebView
 import org.openinkbridge.sdk.PenPoint
+import org.openinkbridge.sdk.OpenInkBridgeLogger
+import org.openinkbridge.sdk.LogLevel
+import org.openinkbridge.sdk.Subsystem
+import org.openinkbridge.sdk.OpenInkBridgeDiagnostics
 
 class MainActivity : AppCompatActivity() {
 
@@ -38,7 +42,24 @@ class MainActivity : AppCompatActivity() {
     private var isFullscreen = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Enable verbose DEBUG log level for developer diagnostics testing
+        OpenInkBridgeLogger.logLevel = LogLevel.DEBUG
+        OpenInkBridgeLogger.i(
+            Subsystem.Android,
+            "MainActivity",
+            "APP_STARTUP",
+            "OpenInkBridge Sample App launched with DEBUG logging enabled"
+        )
+        val configDump = OpenInkBridgeDiagnostics.dumpConfiguration()
+        OpenInkBridgeLogger.i(
+            Subsystem.Configuration,
+            "MainActivity",
+            "DIAGNOSTICS_DUMP",
+            "\n$configDump"
+        )
+
         // Bypass Android's non-SDK/hidden API restrictions so Onyx SDK reflection succeeds.
+
         // Uses double-reflection: ask Class.getDeclaredMethod for VMRuntime via Class itself
         // (the JVM sees the caller as java.lang.Class, which is exempt from hidden-api checks).
         try {
