@@ -1,7 +1,6 @@
 package org.openinkbridge.sdk
 
 import android.os.Build
-import android.util.Log
 import android.view.View
 
 class EpdAdapterManager(private val view: View) {
@@ -18,30 +17,70 @@ class EpdAdapterManager(private val view: View) {
         val hardware = Build.HARDWARE.lowercase()
         val device = Build.DEVICE.lowercase()
 
-        Log.d("OpenInkBridge", "Detecting hardware: Manufacturer=$manufacturer, Brand=$brand, Device=$device")
+        OpenInkBridgeLogger.d(
+            Subsystem.Backend,
+            "System",
+            "HARDWARE_DETECTION",
+            "Detecting hardware: Manufacturer=$manufacturer, Brand=$brand, Device=$device, Hardware=$hardware",
+            mapOf("manufacturer" to manufacturer, "brand" to brand, "device" to device)
+        )
 
         activeAdapter = when {
             manufacturer.contains("onyx") || brand.contains("onyx") -> {
-                Log.i("OpenInkBridge", "Binding Onyx Boox EPD Adapter")
+                OpenInkBridgeLogger.i(
+                    Subsystem.Backend,
+                    "BOOX",
+                    "BACKEND_SELECTED",
+                    "Binding Onyx Boox EPD Adapter"
+                )
                 OnyxBooxEpdAdapter()
             }
             manufacturer.contains("bigme") || brand.contains("bigme") -> {
-                Log.i("OpenInkBridge", "Binding Bigme EPD Adapter")
+                OpenInkBridgeLogger.i(
+                    Subsystem.Backend,
+                    "BIGME",
+                    "BACKEND_SELECTED",
+                    "Binding Bigme EPD Adapter"
+                )
                 BigmeEpdAdapter()
             }
             device.contains("supernote") -> {
-                Log.i("OpenInkBridge", "Binding Supernote EPD Adapter (Fallback)")
-                FallbackCanvasAdapter() // Placeholder for Supernote specific implementation
+                OpenInkBridgeLogger.w(
+                    Subsystem.Backend,
+                    "SUPERNOTE",
+                    "BACKEND_FALLBACK",
+                    "Supernote hardware detected; binding Fallback Canvas Adapter (native integration pending)"
+                )
+                FallbackCanvasAdapter()
             }
             else -> {
-                Log.i("OpenInkBridge", "No custom E-Ink hardware detected. Binding Jetpack Ink Adapter.")
+                OpenInkBridgeLogger.i(
+                    Subsystem.Backend,
+                    "JETPACK_INK",
+                    "BACKEND_SELECTED",
+                    "No proprietary E-Ink vendor detected; binding Jetpack Ink Adapter with MotionEventPredictor"
+                )
                 JetpackInkAdapter()
             }
         }
         activeAdapter.init(view)
+        OpenInkBridgeLogger.i(
+            Subsystem.Backend,
+            activeAdapter.javaClass.simpleName,
+            "INITIALIZATION_COMPLETE",
+            "EpdAdapter initialized and bound to view",
+            mapOf("adapter" to activeAdapter.javaClass.simpleName)
+        )
     }
 
     fun release() {
+        OpenInkBridgeLogger.i(
+            Subsystem.Backend,
+            activeAdapter.javaClass.simpleName,
+            "RELEASE",
+            "Releasing EpdAdapter resources"
+        )
         activeAdapter.release()
     }
 }
+

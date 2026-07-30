@@ -1,6 +1,5 @@
 package org.openinkbridge.sdk
 
-import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -16,9 +15,20 @@ object CoreBridge {
         try {
             System.loadLibrary("openinkbridge_core")
             isNativeLibraryLoaded = true
-            Log.i("OpenInkBridge", "Successfully loaded native Rust core library")
+            OpenInkBridgeLogger.i(
+                Subsystem.Core,
+                "JNI",
+                "NATIVE_LIBRARY_LOADED",
+                "Successfully loaded native Rust core library (libopeninkbridge_core.so)"
+            )
         } catch (e: UnsatisfiedLinkError) {
-            Log.w("OpenInkBridge", "Native Rust core library not found; falling back to Kotlin implementations", e)
+            OpenInkBridgeLogger.w(
+                Subsystem.Core,
+                "JNI",
+                "NATIVE_LIBRARY_FALLBACK",
+                "Native Rust core library not found; falling back to Kotlin implementations",
+                mapOf("error" to (e.message ?: "UnsatisfiedLinkError"))
+            )
         }
     }
 
@@ -31,20 +41,65 @@ object CoreBridge {
 
         if (isNativeLibraryLoaded) {
             try {
+                val startTime = System.currentTimeMillis()
                 val jsonInput = strokePointsToJson(points)
                 val jsonOutput = smoothStroke(jsonInput)
-                return jsonToStrokePoints(jsonOutput)
+                val result = jsonToStrokePoints(jsonOutput)
+                val duration = System.currentTimeMillis() - startTime
+                OpenInkBridgeLogger.d(
+                    Subsystem.Performance,
+                    "JNI",
+                    "STROKE_SMOOTH_PERF",
+                    "Native Rust JNI stroke smoothing completed in ${duration}ms for ${points.size} points"
+                )
+                return result
             } catch (e: Exception) {
-                Log.e("OpenInkBridge", "JNI Stroke smoothing execution failed; falling back to Kotlin", e)
+                OpenInkBridgeLogger.e(
+                    Subsystem.Core,
+                    "JNI",
+                    "JNI_EXECUTION_FAILED",
+                    "JNI Stroke smoothing execution failed; falling back to Kotlin implementation",
+                    mapOf("error" to (e.message ?: "Exception"))
+                )
             }
+        } else {
+            OpenInkBridgeLogger.d(
+                Subsystem.Core,
+                "KotlinFallback",
+                "STROKE_SMOOTH_FALLBACK",
+                "Using Kotlin fallback moving average for ${points.size} points"
+            )
         }
 
-        // Fallback Kotlin moving-average logic
         return smoothPointsFallback(points)
     }
 
-    // Declaring the native Rust JNI method
+    fun setNativeLogLevel(level: LogLevel) {
+        if (isNativeLibraryLoaded) {
+            try {
+                setLogLevel(level.name)
+            } catch (e: Exception) {
+                OpenInkBridgeLogger.w(Subsystem.Core, "JNI", "SET_LOG_LEVEL_FAILED", "Could not set native log level: ${e.message}")
+            }
+        }
+    }
+
+    fun getNativeDiagnostics(backendName: String): String? {
+        if (isNativeLibraryLoaded) {
+            return try {
+                getDiagnosticsJson(backendName)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        return null
+    }
+
+    // Declaring the native Rust JNI methods
     private external fun smoothStroke(pointsJson: String): String
+    private external fun setLogLevel(levelStr: String)
+    private external fun getDiagnosticsJson(backendName: String): String
+    private external fun getRingBufferLogsJson(): String
 
     private fun strokePointsToJson(points: List<PenPoint>): String {
         val array = JSONArray()
@@ -101,3 +156,4 @@ object CoreBridge {
         return smoothed
     }
 }
+

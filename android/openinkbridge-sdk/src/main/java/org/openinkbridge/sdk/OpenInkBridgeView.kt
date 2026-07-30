@@ -87,7 +87,9 @@ class OpenInkBridgeView @JvmOverloads constructor(
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_MOVE) {
-            android.util.Log.d("OpenInkBridge", "[DISPATCH_TOUCH] x=${event.x} y=${event.y}")
+            if (OpenInkBridgeLogger.shouldLogTrace()) {
+                OpenInkBridgeLogger.t(Subsystem.Android, "OpenInkBridgeView", "DISPATCH_TOUCH", "x=${event.x} y=${event.y}")
+            }
         }
         return super.dispatchTouchEvent(event)
     }
@@ -95,7 +97,9 @@ class OpenInkBridgeView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val tool = event.getToolType(0)
         val isStylus = tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER
-        android.util.Log.d("OpenInkBridge", "[VIEW] onTouchEvent action=${event.action} tool=$tool isStylus=$isStylus stylusOnly=$stylusOnly directDraw=${epdAdapterManager.activeAdapter.isDirectDrawingActive()}")
+        if (OpenInkBridgeLogger.shouldLogTrace()) {
+            OpenInkBridgeLogger.t(Subsystem.PenInput, "OpenInkBridgeView", "ON_TOUCH_EVENT", "action=${event.action} tool=$tool isStylus=$isStylus stylusOnly=$stylusOnly directDraw=${epdAdapterManager.activeAdapter.isDirectDrawingActive()}")
+        }
         if (stylusOnly && !isStylus) {
             return false
         }
@@ -103,11 +107,12 @@ class OpenInkBridgeView @JvmOverloads constructor(
         // When TouchHelper is active AND input is a stylus, TouchHelper handles hardware direct drawing callbacks.
         // For finger touches (!isStylus), process via standard software stroke rendering below.
         if (isStylus && epdAdapterManager.activeAdapter.isDirectDrawingActive()) {
-            android.util.Log.d("OpenInkBridge", "[VIEW] Routing to super.onTouchEvent for TouchHelper (Stylus)")
+            OpenInkBridgeLogger.d(Subsystem.Android, "OpenInkBridgeView", "TOUCH_HELPER_ROUTE", "Routing to super.onTouchEvent for TouchHelper (Stylus)")
             epdAdapterManager.activeAdapter.onTouchEvent(event)
             super.onTouchEvent(event)
             return true // Consumes the touch stream to receive move/up actions
         }
+
         
         epdAdapterManager.activeAdapter.onTouchEvent(event)
         val toolType = when (event.getToolType(0)) {
