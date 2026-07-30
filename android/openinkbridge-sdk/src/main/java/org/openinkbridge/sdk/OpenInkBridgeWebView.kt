@@ -34,7 +34,12 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
         webView.webChromeClient = object : android.webkit.WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                 consoleMessage?.let {
-                    android.util.Log.d("OpenInkBridge", "[JS CONSOLE] ${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}")
+                    OpenInkBridgeLogger.d(
+                        Subsystem.JsBridge,
+                        "WebView",
+                        "JS_CONSOLE",
+                        "${it.message()} -- From line ${it.lineNumber()} of ${it.sourceId()}"
+                    )
                 }
                 return true
             }
