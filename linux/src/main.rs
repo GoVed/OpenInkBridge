@@ -1,15 +1,40 @@
+use openinkbridge_core::diagnostics::{collect_diagnostics, dump_configuration, Capabilities};
+use openinkbridge_core::logging::{set_log_level, LogLevel, Subsystem};
 use openinkbridge_core::models::Point;
 use openinkbridge_core::platform::remarkable::RemarkableBackend;
 use openinkbridge_core::platform::{EpdBackend, PenState, RefreshMode};
-use openinkbridge_core::smooth_stroke;
+use openinkbridge_core::{openink_info, openink_warn, smooth_stroke};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("OpenInkBridge Linux Driver started (reMarkable Backend).");
+    set_log_level(LogLevel::Info);
+    openink_info!(
+        Subsystem::Linux,
+        "LinuxDaemon",
+        "STARTUP",
+        "OpenInkBridge Linux Driver started (reMarkable Backend)"
+    );
 
     let mut backend = RemarkableBackend::remarkables_default();
+    let mut fallback_reason = None;
     if let Err(err) = backend.initialize() {
-        eprintln!("Warning initializing reMarkable backend: {}", err);
+        openink_warn!(
+            Subsystem::Backend,
+            "REMARKABLE",
+            "INIT_WARN",
+            "Warning initializing reMarkable backend: {}",
+            err
+        );
+        fallback_reason = Some(err.to_string());
     }
+
+    let report = collect_diagnostics(
+        "RemarkableBackend".to_string(),
+        vec!["RemarkableBackend".to_string()],
+        fallback_reason,
+        Capabilities::default(),
+        "Fast".to_string(),
+    );
+    println!("{}", dump_configuration(&report));
 
     let mut current_stroke: Vec<Point> = Vec::new();
 
@@ -53,3 +78,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
 }
+
