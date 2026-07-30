@@ -2,6 +2,8 @@ use crate::models::Point;
 use crate::platform::remarkable::display::DisplayRenderer;
 use crate::platform::remarkable::input::{InputParser, RawInputEvent};
 use crate::platform::{DisplayTransform, EpdBackend, PenEvent, RefreshMode};
+use crate::logging::Subsystem;
+use crate::{openink_debug, openink_info, openink_trace, openink_warn};
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -48,6 +50,14 @@ impl EpdBackend for RemarkableBackend {
             return Ok(());
         }
 
+        openink_info!(
+            Subsystem::Backend,
+            "REMARKABLE",
+            "INITIALIZATION",
+            "Initializing RemarkableBackend with evdev path: {:?}",
+            self.input_device_path
+        );
+
         // Initialize display renderer
         self.renderer.initialize()?;
 
@@ -55,23 +65,53 @@ impl EpdBackend for RemarkableBackend {
         if self.input_device_path.exists() {
             match File::open(&self.input_device_path) {
                 Ok(file) => {
+                    openink_info!(
+                        Subsystem::PenInput,
+                        "REMARKABLE",
+                        "EVDEV_BOUND",
+                        "Opened evdev device successfully at {:?}",
+                        self.input_device_path
+                    );
                     self.input_file = Some(file);
                 }
                 Err(err) => {
-                    // Log warning but proceed with memory buffer capability
-                    eprintln!(
-                        "RemarkableBackend: Could not open evdev device {:?}: {}",
-                        self.input_device_path, err
+                    openink_warn!(
+                        Subsystem::PenInput,
+                        "REMARKABLE",
+                        "EVDEV_OPEN_FAILED",
+                        "Could not open evdev device {:?}: {}; operating in synthetic buffer mode",
+                        self.input_device_path,
+                        err
                     );
                 }
             }
+        } else {
+            openink_warn!(
+                Subsystem::PenInput,
+                "REMARKABLE",
+                "EVDEV_NOT_FOUND",
+                "Input device path {:?} does not exist",
+                self.input_device_path
+            );
         }
 
         self.is_initialized = true;
+        openink_info!(
+            Subsystem::Backend,
+            "REMARKABLE",
+            "INIT_COMPLETE",
+            "RemarkableBackend hardware initialization complete"
+        );
         Ok(())
     }
 
     fn shutdown(&mut self) -> Result<(), String> {
+        openink_info!(
+            Subsystem::Backend,
+            "REMARKABLE",
+            "SHUTDOWN",
+            "Shutting down RemarkableBackend"
+        );
         self.renderer.shutdown()?;
         self.input_file = None;
         self.is_initialized = false;
@@ -94,16 +134,45 @@ impl EpdBackend for RemarkableBackend {
             }
         }
 
-        self.parser.process_events(&raw_events)
+        let parsed = self.parser.process_events(&raw_events);
+        if !parsed.is_empty() {
+            openink_trace!(
+                Subsystem::PenInput,
+                "REMARKABLE",
+                "EVENTS_RECEIVED",
+                "Parsed {} pen events from {} raw evdev events",
+                parsed.len(),
+                raw_events.len()
+            );
+        }
+        parsed
     }
 
     fn render_strokes(&mut self, points: &[Point], color: u32, width: f32) -> Result<(), String> {
+        openink_debug!(
+            Subsystem::Renderer,
+            "REMARKABLE",
+            "RENDER_STROKE",
+            "Rendering stroke with {} points, color 0x{:08X}, width {}",
+            points.len(),
+            color,
+            width
+        );
         self.renderer.render_stroke_points(points, color, width);
         // Automatically request partial refresh for rendered stroke bounds
         self.request_refresh(RefreshMode::Fast, None)
     }
 
     fn request_refresh(&mut self, mode: RefreshMode, rect: Option<(i32, i32, i32, i32)>) -> Result<(), String> {
+        openink_debug!(
+            Subsystem::Refresh,
+            "REMARKABLE",
+            "REFRESH_REQUESTED",
+            "Refresh requested mode: {:?}, rect: {:?}",
+            mode,
+            rect
+        );
         self.renderer.refresh_screen(mode, rect)
     }
 }
+

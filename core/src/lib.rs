@@ -1,3 +1,5 @@
+pub mod diagnostics;
+pub mod logging;
 pub mod models;
 pub mod platform;
 
@@ -94,6 +96,34 @@ pub fn smooth_stroke_wasm(points_json: &str) -> String {
     serde_json::to_string(&smoothed).unwrap_or_default()
 }
 
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn set_log_level_wasm(level_str: &str) {
+    if let Ok(level) = level_str.parse::<logging::LogLevel>() {
+        logging::set_log_level(level);
+    }
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn collect_diagnostics_wasm(backend: &str) -> String {
+    let report = diagnostics::collect_diagnostics(
+        backend.to_string(),
+        vec!["WasmCanvas".to_string()],
+        None,
+        diagnostics::Capabilities::default(),
+        "Fast".to_string(),
+    );
+    serde_json::to_string(&report).unwrap_or_default()
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn get_ring_buffer_logs_wasm() -> String {
+    let logs = logging::get_ring_buffer_entries();
+    serde_json::to_string(&logs).unwrap_or_default()
+}
+
 #[cfg(feature = "android")]
 #[allow(non_snake_case)]
 pub mod android {
@@ -102,6 +132,8 @@ pub mod android {
     use jni::sys::jstring;
     use super::smooth_stroke;
     use super::models::Point;
+    use super::{diagnostics, logging};
+    use std::str::FromStr;
 
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_org_openinkbridge_sdk_CoreBridge_smoothStroke(
@@ -118,4 +150,47 @@ pub mod android {
         let output_str = serde_json::to_string(&smoothed).unwrap_or_default();
         env.new_string(output_str).unwrap().into_raw()
     }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_org_openinkbridge_sdk_CoreBridge_setLogLevel(
+        mut env: JNIEnv,
+        _class: JClass,
+        level_str: JString,
+    ) {
+        if let Ok(s) = env.get_string(&level_str) {
+            let str_val: String = s.into();
+            if let Ok(lvl) = logging::LogLevel::from_str(&str_val) {
+                logging::set_log_level(lvl);
+            }
+        }
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_org_openinkbridge_sdk_CoreBridge_getDiagnosticsJson(
+        mut env: JNIEnv,
+        _class: JClass,
+        backend_name: JString,
+    ) -> jstring {
+        let backend: String = env.get_string(&backend_name).map(|s| s.into()).unwrap_or_else(|_| "AndroidJNI".to_string());
+        let report = diagnostics::collect_diagnostics(
+            backend,
+            vec!["OnyxBooxEpdAdapter".to_string(), "BigmeEpdAdapter".to_string(), "JetpackInkAdapter".to_string(), "FallbackCanvasAdapter".to_string()],
+            None,
+            diagnostics::Capabilities::default(),
+            "SPEED".to_string(),
+        );
+        let json_str = serde_json::to_string(&report).unwrap_or_default();
+        env.new_string(json_str).unwrap().into_raw()
+    }
+
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_org_openinkbridge_sdk_CoreBridge_getRingBufferLogsJson(
+        mut env: JNIEnv,
+        _class: JClass,
+    ) -> jstring {
+        let logs = logging::get_ring_buffer_entries();
+        let json_str = serde_json::to_string(&logs).unwrap_or_default();
+        env.new_string(json_str).unwrap().into_raw()
+    }
 }
+
