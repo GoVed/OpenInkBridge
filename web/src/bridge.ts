@@ -1,3 +1,6 @@
+import { logger, LogLevel, Subsystem } from './logger';
+import { collectDiagnostics, dumpConfiguration, createBugReport, DiagnosticsReport } from './diagnostics';
+
 export interface StrokePoint {
     x: number;
     y: number;
@@ -18,20 +21,30 @@ class OpenInkBridge {
     private strokeCallbacks: StrokeCallback[] = [];
     private strokeStartCallbacks: ((point: StrokePoint) => void)[] = [];
     private strokeUpdateCallbacks: ((point: StrokePoint) => void)[] = [];
-    private fallbackCanvas: HTMLCanvasElement | null = null;
-    private fallbackCtx: CanvasRenderingContext2D | null = null;
     private currentFallbackStroke: StrokePoint[] = [];
     private isDrawingFallback = false;
 
     constructor() {
         if (typeof window !== 'undefined') {
+            logger.info(Subsystem.JsBridge, 'Browser', 'INITIALIZE', 'OpenInkBridge JS SDK initialized');
             // Register the global native callback hook
             (window as any).onOpenInkBridgeStrokeFinished = (strokeJson: string) => {
                 try {
                     const points: StrokePoint[] = JSON.parse(strokeJson);
+                    logger.debug(
+                        Subsystem.Synchronization,
+                        'NativeBridge',
+                        'STROKE_RECEIVED',
+                        `Received finalized stroke with ${points.length} points from native client`
+                    );
                     this.notifyStrokeCallbacks(points);
-                } catch (e) {
-                    console.error("OpenInkBridge: Failed to parse stroke data from native client", e);
+                } catch (e: any) {
+                    logger.error(
+                        Subsystem.Synchronization,
+                        'NativeBridge',
+                        'PARSE_ERROR',
+                        `Failed to parse stroke data from native client: ${e?.message || e}`
+                    );
                 }
             };
         }
@@ -41,7 +54,13 @@ class OpenInkBridge {
      * Check if the web app is running inside a native OpenInkBridge container.
      */
     public isSupported(): boolean {
-        return typeof window !== 'undefined' && typeof (window as any).OpenInkBridgeNative !== 'undefined';
+        const supported = typeof window !== 'undefined' && typeof (window as any).OpenInkBridgeNative !== 'undefined';
+        if (supported) {
+            logger.debug(Subsystem.Backend, 'NativeBridge', 'SUPPORTED_CHECK', 'Native OpenInkBridge interface detected');
+        } else {
+            logger.debug(Subsystem.Backend, 'PointerFallback', 'SUPPORTED_CHECK', 'Native OpenInkBridge interface not present; using browser fallbacks');
+        }
+        return supported;
     }
 
     /**
@@ -63,9 +82,23 @@ class OpenInkBridge {
                     height: rect.height
                 }
             };
+            logger.info(
+                Subsystem.JsBridge,
+                'NativeBridge',
+                'SET_WRITING_MODE',
+                `Enabling native writing mode: enabled=${enabled}, rect=${rect.width}x${rect.height} at (${rect.left}, ${rect.top})`,
+                payload
+            );
             (window as any).OpenInkBridgeNative.setWritingMode(enabled, JSON.stringify(payload));
             return;
         }
+
+        logger.info(
+            Subsystem.JsBridge,
+            'PointerFallback',
+            'SET_WRITING_MODE',
+            `Setting browser pointer fallback writing mode: enabled=${enabled}`
+        );
 
         // Fallback implementation for standard browsers
         if (enabled) {
@@ -80,6 +113,7 @@ class OpenInkBridge {
      */
     public onStrokeDrawn() {
         if (this.isSupported() && typeof (window as any).OpenInkBridgeNative.onStrokeDrawn === 'function') {
+            logger.debug(Subsystem.Synchronization, 'NativeBridge', 'ON_STROKE_DRAWN', 'Notifying native bridge that stroke was redrawn');
             (window as any).OpenInkBridgeNative.onStrokeDrawn();
         }
     }
@@ -114,6 +148,29 @@ class OpenInkBridge {
         };
     }
 
+    /**
+     * Diagnostics & Logging Public API Methods
+     */
+    public setLogLevel(level: LogLevel | string) {
+        logger.setLogLevel(level);
+    }
+
+    public collectDiagnostics(): DiagnosticsReport {
+        return collectDiagnostics(undefined, this.isSupported());
+    }
+
+    public dumpConfiguration(): string {
+        return dumpConfiguration(undefined, this.isSupported());
+    }
+
+    public createBugReport(): string {
+        return createBugReport(undefined, this.isSupported());
+    }
+
+    public getRingBufferLogs() {
+        return logger.getRingBufferLogs();
+    }
+
     private notifyStrokeCallbacks(points: StrokePoint[]) {
         this.strokeCallbacks.forEach(cb => cb(points));
     }
@@ -130,16 +187,14 @@ class OpenInkBridge {
         // Fallback uses pointer events to capture pressure and coordinates
         const handlePointerDown = (e: PointerEvent) => {
             if (options?.stylusOnly && e.pointerType !== 'pen') return;
-            // Explicitly prevent scrolling/gestures
             e.preventDefault();
             try {
                 element.setPointerCapture(e.pointerId);
-            } catch (err) {
-                // Ignore if platform does not support pointer capture on target element
-            }
+            } catch (err) {}
             this.isDrawingFallback = true;
             const pt = this.getPointFromEvent(e, element);
             this.currentFallbackStroke = [pt];
+            logger.debug(Subsystem.PenInput, 'PointerFallback', 'PEN_DOWN', `Pen down at (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) pressure=${pt.pressure}`);
             this.notifyStrokeStarted(pt);
         };
 
@@ -149,6 +204,9 @@ class OpenInkBridge {
             e.preventDefault();
             const pt = this.getPointFromEvent(e, element);
             this.currentFallbackStroke.push(pt);
+            if (logger.shouldLogTrace(30)) {
+                logger.trace(Subsystem.PenInput, 'PointerFallback', 'PEN_MOVE', `Pen move (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) pressure=${pt.pressure}`);
+            }
             this.notifyStrokeUpdated(pt);
         };
 
@@ -159,6 +217,7 @@ class OpenInkBridge {
                 element.releasePointerCapture(e.pointerId);
             } catch (err) {}
             
+            logger.debug(Subsystem.PenInput, 'PointerFallback', 'PEN_UP', `Pen up stroke finished with ${this.currentFallbackStroke.length} points`);
             if (this.currentFallbackStroke.length > 0) {
                 this.notifyStrokeCallbacks(this.currentFallbackStroke);
             }
@@ -171,6 +230,7 @@ class OpenInkBridge {
             try {
                 element.releasePointerCapture(e.pointerId);
             } catch (err) {}
+            logger.warn(Subsystem.PenInput, 'PointerFallback', 'PEN_CANCEL', 'Pointer stroke cancelled');
             this.currentFallbackStroke = [];
         };
 
@@ -183,7 +243,7 @@ class OpenInkBridge {
         element.addEventListener('pointermove', handlePointerMove, { passive: false });
         element.addEventListener('pointerup', handlePointerUp);
         element.addEventListener('pointercancel', handlePointerCancel);
-        element.style.touchAction = 'none'; // Prevent scrolling while drawing
+        element.style.touchAction = 'none';
     }
 
     private removeFallbackListeners(element: HTMLElement) {
@@ -205,10 +265,11 @@ class OpenInkBridge {
             x: e.clientX - rect.left,
             y: e.clientY - rect.top,
             pressure: e.pressure || 0.5,
-            tilt: e.tiltX || 0, // Simplified tilt
+            tilt: e.tiltX || 0,
             timestamp: Date.now()
         };
     }
 }
 
 export const openInkBridge = new OpenInkBridge();
+
