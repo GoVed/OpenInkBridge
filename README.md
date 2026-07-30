@@ -48,9 +48,11 @@ To achieve low-latency drawing on E-Ink displays, OpenInkBridge uses a **Hybrid 
 
 Refer to the integration guides for instructions on how to compile, build, and run OpenInkBridge for each platform:
 * **[Documentation Index](./docs/INDEX.md)**
+* **[Developer Diagnostics & Logging Guide](./docs/DEVELOPER_DIAGNOSTICS.md)**
 * **[Web & WebApp Integration Guide](./docs/WEB_INTEGRATION.md)**
 * **[Android SDK Integration Guide](./docs/ANDROID_INTEGRATION.md)**
 * **[Linux Native Client Integration Guide](./docs/LINUX_INTEGRATION.md)**
+
 
 ## License
 
