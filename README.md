@@ -58,3 +58,9 @@ Refer to the integration guides for instructions on how to compile, build, and r
 
 OpenInkBridge is licensed under the **[Apache License, Version 2.0](./LICENSE)**. You are free to use, modify, sublicense, and distribute this SDK for both open-source and commercial applications.
 
+## Trademark Disclaimer
+
+All product names, logos, brands, trademarks, and registered trademarks mentioned in this repository (including *reMarkable*, *Onyx Boox*, *Bigme*, *Supernote*, *Kobo*, and *E Ink*) are the property of their respective owners. 
+
+All company, product, and service names used in this project are for identification and hardware compatibility reference purposes only. Use of these names, logos, and brands does not imply endorsement, affiliation, sponsorship, or certification by their respective owners. OpenInkBridge is an independent open-source software project.
+

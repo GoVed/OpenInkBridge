@@ -43,3 +43,11 @@ OpenInkBridge coordinates drawing inputs and display controllers across platform
 ## 3. Stroke Math Engine (Rust)
 
 All platforms (Android via JNI, Web via WASM, and Linux via native crate reference) utilize the same optimized Rust math library located in the [`core/`](../core) directory. This ensures identical drawing smoothing (Double Exponential Smoothing) and path compression (Ramer-Douglas-Peucker algorithm) regardless of where the app is running.
+
+---
+
+## 4. Trademark Disclaimer
+
+All product names, logos, brands, trademarks, and registered trademarks mentioned in this documentation (including *reMarkable*, *Onyx Boox*, *Bigme*, *Supernote*, *Kobo*, and *E Ink*) are the property of their respective owners. 
+
+All company, product, and service names used in this documentation are for identification and hardware compatibility reference purposes only. Use of these names, logos, and brands does not imply endorsement, affiliation, sponsorship, or certification by their respective owners. OpenInkBridge is an independent open-source software project.
