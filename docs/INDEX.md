@@ -8,6 +8,7 @@ Below are the detailed integration guides:
 
 * **[Web & WebApp Integration Guide](./WEB_INTEGRATION.md)**: Integrating `@openinkbridge/web` inside HTML5 Canvas, React components, and handling browser pointer fallbacks.
 * **[Android SDK Integration Guide](./ANDROID_INTEGRATION.md)**: Adding `OpenInkBridgeView` and `OpenInkBridgeWebView` in native Kotlin/Java apps, configuring reflection EPD adapters, lifecycle handling, and JNI compilation.
+* **[reMarkable Integration Guide](./remarkable.md)**: Hardware adapter design, build instructions for `armv7-unknown-linux-gnueabihf`, `libremarkable` refresh control, and device matrix (rm1, rm2, Paper Pro).
 * **[Linux Native Client Integration Guide](./LINUX_INTEGRATION.md)**: Understanding how the Linux driver daemon mapping `/dev/fb0` and `/dev/input/event0` coordinates works on reMarkable and Kobo tablets.
 
 ---
