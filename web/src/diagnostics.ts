@@ -39,7 +39,7 @@ export function collectDiagnostics(activeBackend?: string, isNativeSupported?: b
         : 'OpenInkBridgeNative bridge object not detected on window; using HTML5 PointerEvents fallback';
 
     return {
-        version: '0.1.1',
+        version: '0.1.2',
         platform: 'Web SDK',
         userAgent: ua,
         devicePixelRatio: dpr,
