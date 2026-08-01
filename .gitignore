@@ -12,6 +12,9 @@
 build/
 local.properties
 .navigation/
+
+# Generated Android native libraries
+android/openinkbridge-sdk/src/main/jniLibs/**/*.so
 captures/
 .externalNativeBuild/
 .cxx/
