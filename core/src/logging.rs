@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -105,7 +105,11 @@ impl LogEntry {
             "[{level}][{subsystem}][{backend}] {event}: {message}",
             level = self.level.as_str(),
             subsystem = self.subsystem.as_str(),
-            backend = if self.backend.is_empty() { "System" } else { &self.backend },
+            backend = if self.backend.is_empty() {
+                "System"
+            } else {
+                &self.backend
+            },
             event = self.event,
             message = self.message
         )
@@ -387,4 +391,3 @@ mod tests {
         assert!(has_fallback);
     }
 }
-

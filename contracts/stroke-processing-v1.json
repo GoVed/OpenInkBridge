@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "zero-phase-weighted-average",
+  "kernel": [0.25, 0.5, 0.25],
+  "vectors": [
+    {
+      "name": "four-point-pressure-and-tilt",
+      "input": [
+        { "x": 0.0, "y": 0.0, "pressure": 0.2, "tilt": 0.0, "timestamp": 1 },
+        { "x": 4.0, "y": 8.0, "pressure": 0.6, "tilt": 4.0, "timestamp": 2 },
+        { "x": 8.0, "y": 4.0, "pressure": 1.0, "tilt": 8.0, "timestamp": 3 },
+        { "x": 12.0, "y": 12.0, "pressure": 0.4, "tilt": 12.0, "timestamp": 4 }
+      ],
+      "expected": [
+        { "x": 0.0, "y": 0.0, "pressure": 0.2, "tilt": 0.0, "timestamp": 1 },
+        { "x": 4.0, "y": 5.0, "pressure": 0.6, "tilt": 4.0, "timestamp": 2 },
+        { "x": 8.0, "y": 7.0, "pressure": 0.75, "tilt": 8.0, "timestamp": 3 },
+        { "x": 12.0, "y": 12.0, "pressure": 0.4, "tilt": 12.0, "timestamp": 4 }
+      ]
+    }
+  ]
+}
