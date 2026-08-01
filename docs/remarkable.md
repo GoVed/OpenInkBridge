@@ -8,22 +8,21 @@ This document provides a guide for integrating, building, and deploying OpenInkB
 
 | Device Model | Processor / Architecture | Display Resolution | Hardware Support Status | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **reMarkable 1** | NXP i.MX6SL (ARMv7-A / `armv7`) | 1404 × 1872 (226 DPI) | **Fully Supported** | Direct Linux framebuffer (`/dev/fb0`), evdev Wacom digitizer (`/dev/input/event0`), `libremarkable` fast partial refresh. |
-| **reMarkable 2** | NXP i.MX7Dual (ARMv7-A / `armv7`) | 1404 × 1872 (226 DPI) | **Fully Supported** | Hardware EPD controller (EPDC) fast update mode (DU/A2), zero-latency direct pen drawing, pressure sensitivity, tilt. |
+| **reMarkable 1** | NXP i.MX6SL (ARMv7-A / `armv7`) | 1404 × 1872 (226 DPI) | **Experimental** | Linux framebuffer, evdev digitizer, and `libremarkable` refresh path; validate against the target OS before deployment. |
+| **reMarkable 2** | NXP i.MX7Dual (ARMv7-A / `armv7`) | 1404 × 1872 (226 DPI) | **Experimental** | Uses the same configurable Linux backend; hardware regression coverage is still required. |
 | **reMarkable Paper Pro** | NXP i.MX8M (ARMv8 / `aarch64`) | 1620 × 2160 (Color Canvas) | **Experimental / Partial** | Uses custom color EPD driver and 64-bit ARM architecture. Touch/stylus input works via evdev; direct framebuffer rendering requires Paper Pro kernel headers and color palette matching. |
 
 ---
 
 ## 2. Supported Firmware Versions
 
-* **reMarkable OS 2.x (2.5 – 2.15):** Fully tested and supported. Standalone binary runs directly via SSH/systemd unit.
-* **reMarkable OS 3.x (3.0 – 3.9+):** Fully supported. Native stylus touch intercept works alongside xochitl or custom launchers (such as Toltec, Oxide, or Remux).
+Firmware compatibility depends on the framebuffer and input-device ABI exposed by the installed OS. Treat the backend as experimental and validate input, pixel format, refresh behavior, shutdown, and coexistence with the stock UI on each supported firmware image.
 
 ---
 
 ## 3. Architecture Overview
 
-OpenInkBridge bypasses standard desktop UI frameworks to achieve handwriting latency of **<50ms** (comparable to native reMarkable OS scribbling).
+OpenInkBridge bypasses standard desktop UI frameworks to minimize input-to-preview latency. No latency threshold is guaranteed without a device-specific benchmark.
 
 ```
                       +-----------------------------+
