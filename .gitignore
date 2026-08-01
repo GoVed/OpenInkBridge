@@ -1,7 +1,9 @@
 # Rust / Cargo
 **/target/
 **/*.rs.bk
-Cargo.lock
+# The workspace lockfile is committed so applications and release artifacts are reproducible.
+**/Cargo.lock
+!Cargo.lock
 
 # Android / Gradle
 .gradle/
@@ -29,6 +31,7 @@ dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.tgz
 
 # OS-specific & Media files
 *.jpg
