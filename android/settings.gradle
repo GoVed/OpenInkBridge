@@ -10,9 +10,21 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven {
-            url "http://repo.boox.com/repository/maven-public/"
-            allowInsecureProtocol = true
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = "Boox"
+                    url "https://repo.boox.com/repository/maven-public/"
+                }
+            }
+            filter {
+                includeGroup "com.onyx.android.sdk"
+                // Legacy transitive artifacts proxied by the vendor repository but absent from
+                // Google Maven and Maven Central. Keep the exception explicit and minimal.
+                includeGroup "pub.devrel"
+                includeGroup "com.tencent"
+                includeGroup "com.jakewharton.hugo.fix"
+            }
         }
     }
 }

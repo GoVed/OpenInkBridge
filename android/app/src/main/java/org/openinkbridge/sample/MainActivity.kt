@@ -378,18 +378,15 @@ class MainActivity : AppCompatActivity() {
         webView = OpenInkBridgeWebView(this)
         container.addView(webView)
         
-        webView?.webView?.webViewClient = object : android.webkit.WebViewClient() {
-            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                webView?.webView?.evaluateJavascript(
-                    "if (window.setStrokeWidth) { window.setStrokeWidth($currentWidth); }",
-                    null
-                )
-                webView?.webView?.evaluateJavascript(
-                    "const chk = document.getElementById('chk-stylus-only'); if (chk && chk.checked !== $isStylusOnlyMode) { chk.checked = $isStylusOnlyMode; chk.dispatchEvent(new Event('change')); }",
-                    null
-                )
-            }
+        webView?.setOnTrustedPageFinishedListener { view, _ ->
+            view.evaluateJavascript(
+                "if (window.setStrokeWidth) { window.setStrokeWidth($currentWidth); }",
+                null
+            )
+            view.evaluateJavascript(
+                "const chk = document.getElementById('chk-stylus-only'); if (chk && chk.checked !== $isStylusOnlyMode) { chk.checked = $isStylusOnlyMode; chk.dispatchEvent(new Event('change')); }",
+                null
+            )
         }
         
         webView?.webView?.loadUrl("file:///android_asset/sample_web_app.html")
@@ -397,7 +394,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         nativeViewOpt?.release()
-        webView?.release()
+        webView?.destroy()
         super.onDestroy()
     }
 

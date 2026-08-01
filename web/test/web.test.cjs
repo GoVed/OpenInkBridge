@@ -125,15 +125,12 @@ test('native payload parser accepts legacy and scoped v1 messages and rejects ma
     const points = [point(1, 2)];
     assert.deepEqual(bridgeModule.parseNativeStrokePayload(JSON.stringify(points)).points, points);
 
-    const parsed = bridgeModule.parseNativeStrokePayload({
-        protocolVersion: 1,
-        type: 'strokeFinished',
-        sessionId: 'session-1',
-        canvasId: 'canvas-1',
-        payload: { points }
-    });
-    assert.equal(parsed.sessionId, 'session-1');
-    assert.deepEqual(parsed.points, points);
+    const fixturePath = path.resolve(__dirname, '..', '..', 'contracts', 'bridge-protocol-v1.json');
+    const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf8'));
+    const parsed = bridgeModule.parseNativeStrokePayload(fixture.strokeFinished);
+    assert.equal(parsed.sessionId, 'session-contract');
+    assert.equal(parsed.canvasId, 'canvas-contract');
+    assert.deepEqual(parsed.points, fixture.strokeFinished.payload.points);
 
     assert.equal(bridgeModule.parseNativeStrokePayload('{broken'), null);
     assert.equal(bridgeModule.parseNativeStrokePayload({ protocolVersion: 2, points }), null);
@@ -174,6 +171,32 @@ test('bridge routes scoped messages to one session and legacy messages to the ac
     first.destroy();
     second.destroy();
     bridge.destroy();
+});
+
+test('origin-scoped message transport sends protocol-v1 commands with session routing', () => {
+    const savedNative = window.OpenInkBridgeNative;
+    const messages = [];
+    window.OpenInkBridgeNative = {
+        postMessage(message) {
+            messages.push(JSON.parse(message));
+        }
+    };
+
+    const bridge = new bridgeModule.OpenInkBridge();
+    const session = bridge.createSession('message-canvas');
+    session.setWritingMode(true, createElement(), { color: '#123456', width: 7 });
+    session.onStrokeDrawn();
+
+    assert.deepEqual(messages.map(message => message.type), ['setWritingMode', 'strokeDrawn']);
+    assert.equal(messages[0].protocolVersion, 1);
+    assert.equal(messages[0].sessionId, session.id);
+    assert.equal(messages[0].canvasId, 'message-canvas');
+    assert.equal(messages[1].sessionId, session.id);
+    assert.equal(messages[1].canvasId, 'message-canvas');
+
+    session.destroy();
+    bridge.destroy();
+    window.OpenInkBridgeNative = savedNative;
 });
 
 test('fallback setup is idempotent and destroy restores element state', () => {

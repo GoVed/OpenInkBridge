@@ -11,6 +11,31 @@ A unified, low-latency E-Ink drawing library for Android, featuring dynamic EPD 
 
 ## 1. Quick Integration
 
+Onyx acceleration is opt-in so generic Android consumers do not inherit the proprietary vendor
+dependency or its transitive networking stack. Add the HTTPS repository with a narrow content
+filter and the runtime dependency only in applications that target BOOX hardware:
+
+```groovy
+repositories {
+    maven {
+        url "https://repo.boox.com/repository/maven-public/"
+        content {
+            includeGroup "com.onyx.android.sdk"
+            includeGroup "pub.devrel"
+            includeGroup "com.tencent"
+            includeGroup "com.jakewharton.hugo.fix"
+        }
+    }
+}
+
+dependencies {
+    runtimeOnly "com.onyx.android.sdk:onyxsdk-pen:1.5.4"
+}
+```
+
+Without this optional runtime, capability probing selects Jetpack motion prediction or the Canvas
+fallback. Review the vendor SDK terms and security posture before shipping it.
+
 ### Standalone Native Canvas View
 
 To add a low-latency drawing canvas to a native Android app, simply add `OpenInkBridgeView` to your layout:
@@ -30,7 +55,7 @@ import android.graphics.Color
 
 class DrawingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState: Bundle?)
+        super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_drawing)
 
         val canvasView = findViewById<OpenInkBridgeView>(R.id.openInkBridgeCanvas)
@@ -61,8 +86,20 @@ If you are loading a WebApp (written in React/Vue/HTML5 Canvas) and want E-Ink l
 val webViewContainer = findViewById<OpenInkBridgeWebView>(R.id.openInkBridgeWebView)
 
 // Load your local or remote WebApp
+webViewContainer.addTrustedOrigin("https://my-drawing-webapp.com")
 webViewContainer.webView.loadUrl("https://my-drawing-webapp.com")
 ```
+
+`OpenInkBridgeWebView` blocks untrusted top-level navigation by default and exposes its native
+JavaScript bridge only to HTTPS origins configured before navigation. The bridge uses AndroidX's
+origin-scoped message listener and accepts main-frame messages only; older WebView builds without
+that feature safely use the browser pointer-event fallback. Local `file:///android_asset/` pages
+and `https://appassets.androidplatform.net` are trusted by default. If an application intentionally
+needs to show other content without native bridge access, set
+`untrustedNavigationPolicy = UntrustedNavigationPolicy.ALLOW_WITHOUT_NATIVE_BRIDGE`.
+The exposed `webView` property is a restricted navigation/evaluation facade, so applications
+cannot accidentally replace the mandatory security client. Call `destroy()` from the owning
+Activity or Fragment's final teardown; ordinary detach/reattach cycles are handled automatically.
 
 ---
 
@@ -117,4 +154,5 @@ We provide a fully functional sample application inside the [`app/`](./app) fold
 To compile and run the sample application on your device:
 1. Open the `android/` directory in Android Studio.
 2. Select the `app` run configuration.
-3. Deploy to your connected Android tablet or Onyx Boox/Bigme device.
+3. Deploy to your connected Android tablet or Onyx Boox device. Bigme currently uses the Android
+   software fallback because vendor acceleration is not implemented yet.

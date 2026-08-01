@@ -18,8 +18,9 @@ import java.lang.reflect.Method
 /**
  * Standard Android drawing fallback using standard views and Canvas invalidation.
  */
-class FallbackCanvasAdapter : EpdAdapter {
+class FallbackCanvasAdapter : EpdAdapter, EpdAdapterIntrospection {
     private var view: View? = null
+    private var adapterState = EpdAdapterState.UNINITIALIZED
     private val paint = Paint().apply {
         color = Color.BLACK
         strokeWidth = 5f
@@ -33,6 +34,7 @@ class FallbackCanvasAdapter : EpdAdapter {
 
     override fun init(view: View) {
         this.view = view
+        adapterState = EpdAdapterState.OPERATIONAL
         OpenInkBridgeLogger.i(
             Subsystem.Backend,
             "FallbackCanvas",
@@ -83,7 +85,16 @@ class FallbackCanvasAdapter : EpdAdapter {
     override fun release() {
         view = null
         points.clear()
+        adapterState = EpdAdapterState.RELEASED
     }
+
+    override fun probe(view: View): EpdAdapterProbeResult = EpdAdapterProbeResult(supported = true)
+
+    override fun status(): EpdAdapterStatus = EpdAdapterStatus(
+        state = adapterState,
+        reason = "Software Canvas rendering; hardware E-Ink operations are unavailable",
+        capabilities = EpdAdapterCapabilities()
+    )
 
     override fun setBrushStyle(color: Int, width: Float) {
         paint.color = color
@@ -109,9 +120,11 @@ class FallbackCanvasAdapter : EpdAdapter {
  * Uses MotionEventPredictor to predict future stylus touch inputs and draw predicted lines ahead,
  * minimizing latency to ~10-15ms on supported Android hardware (Samsung, Pixel, foldables).
  */
-class JetpackInkAdapter : EpdAdapter {
+class JetpackInkAdapter : EpdAdapter, EpdAdapterIntrospection {
     private var view: View? = null
     private var predictor: MotionEventPredictor? = null
+    private var adapterState = EpdAdapterState.UNINITIALIZED
+    private var statusReason: String? = null
     private val currentPath = Path()
     private val paint = Paint().apply {
         color = Color.BLACK
@@ -137,6 +150,8 @@ class JetpackInkAdapter : EpdAdapter {
         this.view = view
         try {
             predictor = MotionEventPredictor.newInstance(view)
+            adapterState = EpdAdapterState.OPERATIONAL
+            statusReason = null
             OpenInkBridgeLogger.i(
                 Subsystem.Backend,
                 "JETPACK_INK",
@@ -144,6 +159,8 @@ class JetpackInkAdapter : EpdAdapter {
                 "Successfully initialized MotionEventPredictor for JetpackInkAdapter"
             )
         } catch (e: Exception) {
+            adapterState = EpdAdapterState.DEGRADED
+            statusReason = "Motion prediction unavailable; software path rendering remains operational: ${e.message}"
             OpenInkBridgeLogger.w(
                 Subsystem.Backend,
                 "JETPACK_INK",
@@ -212,7 +229,17 @@ class JetpackInkAdapter : EpdAdapter {
     override fun release() {
         view = null
         predictor = null
+        adapterState = EpdAdapterState.RELEASED
     }
+
+
+    override fun probe(view: View): EpdAdapterProbeResult = EpdAdapterProbeResult(supported = true)
+
+    override fun status(): EpdAdapterStatus = EpdAdapterStatus(
+        state = adapterState,
+        reason = statusReason,
+        capabilities = EpdAdapterCapabilities(motionPrediction = predictor != null)
+    )
 
     override fun setBrushStyle(color: Int, width: Float) {
         paint.color = color
@@ -227,8 +254,12 @@ class JetpackInkAdapter : EpdAdapter {
  * This avoids compiling proprietary Onyx jars directly into the library, allowing
  * open-source developers to build and distribute the app legally.
  */
-class OnyxBooxEpdAdapter : EpdAdapter {
+class OnyxBooxEpdAdapter : EpdAdapter, EpdAdapterIntrospection {
     private var view: View? = null
+    private var adapterState = EpdAdapterState.UNINITIALIZED
+    private var statusReason: String? = null
+    private var epdControllerOperational = false
+    private var surfaceCallback: SurfaceHolder.Callback? = null
     private var epdControllerClass: Class<*>? = null
     private var applyModeMethod: Method? = null
     private var epdModeEnumClass: Class<*>? = null
@@ -248,6 +279,19 @@ class OnyxBooxEpdAdapter : EpdAdapter {
     private var drawingLimitRect: android.graphics.Rect? = null
 
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    override fun probe(view: View): EpdAdapterProbeResult {
+        return try {
+            Class.forName("com.onyx.android.sdk.pen.TouchHelper")
+            Class.forName("com.onyx.android.sdk.pen.RawInputCallback")
+            EpdAdapterProbeResult(supported = true)
+        } catch (error: Throwable) {
+            EpdAdapterProbeResult(
+                supported = false,
+                reason = "Onyx Pen SDK classes are unavailable: ${error.message ?: error.javaClass.simpleName}"
+            )
+        }
+    }
 
     private fun keepRawDrawingActive() {
         try {
@@ -269,6 +313,9 @@ class OnyxBooxEpdAdapter : EpdAdapter {
 
     override fun init(view: View) {
         this.view = view
+        adapterState = EpdAdapterState.UNINITIALIZED
+        statusReason = null
+        epdControllerOperational = false
         
         // 1. Hook standard EpdController for refresh mode changes
         try {
@@ -282,17 +329,19 @@ class OnyxBooxEpdAdapter : EpdAdapter {
             )
             enterScribbleModeMethod = epdControllerClass?.getMethod("enterScribbleMode", View::class.java)
             leaveScribbleModeMethod = epdControllerClass?.getMethod("leaveScribbleMode", View::class.java)
+            epdControllerOperational = true
             
             OpenInkBridgeLogger.i(Subsystem.Backend, "BOOX", "REFLECTION_SUCCESS", "Successfully hooked Onyx Boox EpdController setViewDefaultUpdateMode and scribble modes via reflection")
             setBooxRefreshMode("DU")
         } catch (e: Exception) {
+            statusReason = "Onyx EPD refresh controller unavailable: ${e.message}"
             OpenInkBridgeLogger.w(Subsystem.Backend, "BOOX", "REFLECTION_WARN", "Onyx Boox EpdController methods not available: ${e.message}")
         }
 
         // 2. Bind to SurfaceView lifecycle if applicable, ensuring TouchHelper is initialized on an active Surface
         val surfaceView = view as? SurfaceView
         if (surfaceView != null) {
-            surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+            val callback = object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     OpenInkBridgeLogger.i(Subsystem.Android, "BOOX", "SURFACE_CREATED", "SurfaceView surface created! Initializing TouchHelper...")
                     clearSurfaceWithWhite(holder)
@@ -308,13 +357,20 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     OpenInkBridgeLogger.i(Subsystem.Android, "BOOX", "SURFACE_DESTROYED", "SurfaceView surface destroyed! Releasing TouchHelper...")
                     releaseTouchHelper()
+                    adapterState = EpdAdapterState.DEGRADED
+                    statusReason = "Waiting for the drawing surface to be recreated"
                 }
-            })
+            }
+            surfaceCallback = callback
+            surfaceView.holder.addCallback(callback)
 
             // In case the surface is already created when init is called
             if (surfaceView.holder.surface?.isValid == true) {
                 clearSurfaceWithWhite(surfaceView.holder)
                 initTouchHelper(surfaceView)
+            } else {
+                adapterState = EpdAdapterState.DEGRADED
+                statusReason = "Waiting for the drawing surface; software preview remains available"
             }
         } else {
             // Fallback for standard Views
@@ -339,6 +395,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                     strokeActive = true
                     collectedPoints.clear()
                     processedPoints.clear()
+                    findOverlayCanvas()?.beginVendorStroke()
                     addOnyxPoint(touchPoint)
                     
                     try {
@@ -399,24 +456,14 @@ class OnyxBooxEpdAdapter : EpdAdapter {
                         processedPoints.clear()
                         
                         // Dispatch finalized stroke points to overlay canvas or native standalone view
-                        val overlay = view as? OpenInkBridgeOverlayCanvas ?: run {
-                            val viewGroup = view as? android.view.ViewGroup
-                            var found: OpenInkBridgeOverlayCanvas? = null
-                            if (viewGroup != null) {
-                                for (i in 0 until viewGroup.childCount) {
-                                    val child = viewGroup.getChildAt(i)
-                                    if (child is OpenInkBridgeOverlayCanvas) {
-                                        found = child
-                                        break
-                                    }
-                                }
-                            }
-                            found
-                        }
+                        val overlay = findOverlayCanvas()
 
                         if (overlay != null) {
                             overlay.post {
-                                overlay.onStrokeCompleted?.invoke(finishedStroke)
+                                overlay.dispatchCompletedStroke(
+                                    finishedStroke,
+                                    PenPointCoordinateSpace.HOST_VIEW_LOCAL_PHYSICAL_PIXELS
+                                )
                             }
                         }
 
@@ -447,8 +494,16 @@ class OnyxBooxEpdAdapter : EpdAdapter {
             } catch (e: Exception) {}
 
             updateLimitRect(targetView)
+            adapterState = EpdAdapterState.OPERATIONAL
+            statusReason = if (epdControllerOperational) {
+                null
+            } else {
+                "Direct drawing is active, but E-Ink refresh-mode control is unavailable"
+            }
             OpenInkBridgeLogger.i(Subsystem.Backend, "BOOX", "TOUCH_HELPER_BOUND", "Successfully initialized Onyx Pen SDK TouchHelper directly!")
         } catch (e: Exception) {
+            adapterState = EpdAdapterState.UNAVAILABLE
+            statusReason = "Onyx TouchHelper could not be initialized: ${e.message}"
             OpenInkBridgeLogger.e(Subsystem.Backend, "BOOX", "TOUCH_HELPER_ERROR", "Failed to initialize Onyx Pen SDK TouchHelper: ${e.message}")
         }
     }
@@ -522,6 +577,15 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         }
     }
 
+    private fun findOverlayCanvas(): OpenInkBridgeOverlayCanvas? {
+        (view as? OpenInkBridgeOverlayCanvas)?.let { return it }
+        val viewGroup = view as? android.view.ViewGroup ?: return null
+        for (index in 0 until viewGroup.childCount) {
+            (viewGroup.getChildAt(index) as? OpenInkBridgeOverlayCanvas)?.let { return it }
+        }
+        return null
+    }
+
     override fun setStylusOnly(enabled: Boolean) {
         this.stylusOnly = enabled
         try {
@@ -546,17 +610,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
             touchHelper?.setStrokeColor(color)
 
             // Find overlay canvas to dynamically set drawing limit rect
-            val viewGroup = view as? android.view.ViewGroup
-            var overlay: OpenInkBridgeOverlayCanvas? = null
-            if (viewGroup != null) {
-                for (i in 0 until viewGroup.childCount) {
-                    val child = viewGroup.getChildAt(i)
-                    if (child is OpenInkBridgeOverlayCanvas) {
-                        overlay = child
-                        break
-                    }
-                }
-            }
+            val overlay = findOverlayCanvas()
             if (overlay != null) {
                 val lp = overlay.layoutParams as? android.widget.FrameLayout.LayoutParams
                 if (lp != null) {
@@ -615,6 +669,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         view?.invalidate()
     }
 
+    @Suppress("UNCHECKED_CAST")
     override fun triggerFullRefresh() {
         try {
             val gcEnum = java.lang.Enum.valueOf(epdModeEnumClass as Class<out Enum<*>>, "GC")
@@ -655,12 +710,28 @@ class OnyxBooxEpdAdapter : EpdAdapter {
     }
 
     override fun release() {
-        endStroke()
-        try {
-            touchHelper?.setRawDrawingEnabled(false)
-        } catch (e: Exception) {}
+        releaseTouchHelper()
+        (view as? SurfaceView)?.let { surfaceView ->
+            surfaceCallback?.let(surfaceView.holder::removeCallback)
+        }
+        surfaceCallback = null
         view = null
+        adapterState = EpdAdapterState.RELEASED
+        statusReason = "Onyx backend resources were released"
     }
+
+    override fun status(): EpdAdapterStatus = EpdAdapterStatus(
+        state = adapterState,
+        reason = statusReason,
+        capabilities = EpdAdapterCapabilities(
+            directDrawing = touchHelper != null,
+            refreshModeControl = epdControllerOperational,
+            fullRefresh = epdControllerOperational,
+            drawingLimit = touchHelper != null,
+            rawDrawingToggle = touchHelper != null,
+            hardwareScribbleHandoff = touchHelper != null && epdControllerOperational
+        )
+    )
 
     override fun setBrushStyle(color: Int, width: Float) {
         paint.color = color
@@ -705,6 +776,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     override fun clearHardwareScribble() {
         mainHandler.post {
             try {
@@ -749,6 +821,7 @@ class OnyxBooxEpdAdapter : EpdAdapter {
         }
     }
 
+    @Suppress("UNCHECKED_CAST")
     private fun setBooxRefreshMode(modeName: String) {
         try {
             val enumValue = java.lang.Enum.valueOf(epdModeEnumClass as Class<out Enum<*>>, modeName)
@@ -775,8 +848,9 @@ class OnyxBooxEpdAdapter : EpdAdapter {
 /**
  * Bigme EPD Adapter that communicates with Bigme Low-Latency Drawing SDK using Java Reflection.
  */
-class BigmeEpdAdapter : EpdAdapter {
+class BigmeEpdAdapter : EpdAdapter, EpdAdapterIntrospection {
     private var view: View? = null
+    private var adapterState = EpdAdapterState.UNAVAILABLE
 
     // Path drawing for live drawing preview
     private val currentPath = Path()
@@ -790,14 +864,20 @@ class BigmeEpdAdapter : EpdAdapter {
         isAntiAlias = true
     }
 
+    override fun probe(view: View): EpdAdapterProbeResult = EpdAdapterProbeResult(
+        supported = false,
+        reason = "Bigme native low-latency integration is not implemented yet"
+    )
+
     override fun init(view: View) {
-        this.view = view
-        try {
-            // Hook Bigme's custom EpdManager system service
-            OpenInkBridgeLogger.i(Subsystem.Backend, "BIGME", "REFLECTION_SUCCESS", "Successfully hooked Bigme SDK via reflection")
-        } catch (e: Exception) {
-            OpenInkBridgeLogger.e(Subsystem.Backend, "BIGME", "REFLECTION_FAILED", "Failed to hook Bigme SDK classes: ${e.message}")
-        }
+        this.view = null
+        adapterState = EpdAdapterState.UNAVAILABLE
+        OpenInkBridgeLogger.w(
+            Subsystem.Backend,
+            "BIGME",
+            "BACKEND_NOT_IMPLEMENTED",
+            "Bigme adapter is a stub and cannot be selected; use an operational fallback backend"
+        )
     }
 
     override fun startStroke(tool: StylusTool, color: Int, width: Float) {
@@ -833,7 +913,15 @@ class BigmeEpdAdapter : EpdAdapter {
 
     override fun triggerFullRefresh() {}
     override fun setRefreshMode(mode: EInkRefreshMode) {}
-    override fun release() { view = null }
+    override fun release() {
+        view = null
+        adapterState = EpdAdapterState.RELEASED
+    }
+
+    override fun status(): EpdAdapterStatus = EpdAdapterStatus(
+        state = adapterState,
+        reason = "Bigme native low-latency integration is not implemented yet"
+    )
 
     override fun setBrushStyle(color: Int, width: Float) {
         paint.color = color

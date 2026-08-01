@@ -42,7 +42,7 @@ import android.graphics.Color
 
 class SketchActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState: Bundle?)
+        super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_sketch)
 
         val drawingCanvas = findViewById<OpenInkBridgeView>(R.id.openInkBridgeView)
@@ -77,24 +77,30 @@ bridgeWebView.webView.loadUrl("file:///android_asset/my_app/index.html")
 ```
 
 Inside the WebApp, developers use the `@openinkbridge/web` npm package to activate the writing mode.
+Only HTTPS origins can be added to the native bridge allowlist. The bridge is injected through an
+origin-scoped AndroidX message listener and rejects iframe calls; unsupported WebView versions fall
+back to ordinary web pointer events. Call `bridgeWebView.destroy()` during final owner teardown.
 
 ---
 
-## 4. Hardware EPD Reflection Routing
+## 4. Hardware EPD Routing
 
-OpenInkBridge does not link proprietary manufacturer JAR files directly, avoiding copyright issues. 
+The SDK compiles against the Onyx Pen SDK for typed raw-input callbacks but declares it
+`compileOnly`; BOOX applications opt into the vendor runtime as shown in the Android README.
+Consumers should review that dependency's terms and security posture before distribution. Without
+it, and on other manufacturers, capability probing selects the Android fallback instead of
+advertising unavailable acceleration.
 
-Instead, `EpdAdapterManager` dynamically scans the device brand at runtime using `android.os.Build` metrics and binds the appropriate reflection adapter:
+`EpdAdapterManager` probes candidates selected from device information and keeps only an operational adapter:
 
 ```kotlin
 activeAdapter = when {
     manufacturer.contains("onyx") || brand.contains("onyx") -> OnyxBooxEpdAdapter()
-    manufacturer.contains("bigme") || brand.contains("bigme") -> BigmeEpdAdapter()
     else -> JetpackInkAdapter() // standard Android fallback
 }
 ```
 
-If Onyx Boox is detected, `OnyxBooxEpdAdapter` hooks into the device's system classes (e.g. `com.onyx.android.sdk.api.device.epd.EpdController`) using Java reflection. This allows your app to bypass standard UI rendering pipelines and draw on the electrophoretic display at direct hardware level.
+If Onyx Boox is detected and initialization succeeds, `OnyxBooxEpdAdapter` uses the Pen SDK and hooks selected system classes such as `EpdController`. Initialization failure is reported and falls back instead of advertising unavailable acceleration.
 
 ---
 

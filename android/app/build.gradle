@@ -47,4 +47,5 @@ dependencies {
     implementation "androidx.constraintlayout:constraintlayout:2.2.0"
     
     implementation project(':openinkbridge-sdk')
+    runtimeOnly "com.onyx.android.sdk:onyxsdk-pen:1.5.4"
 }

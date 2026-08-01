@@ -7,6 +7,8 @@
 
 # Android / Gradle
 .gradle/
+.gradle-user-home/
+.android-sdk/
 build/
 local.properties
 .navigation/

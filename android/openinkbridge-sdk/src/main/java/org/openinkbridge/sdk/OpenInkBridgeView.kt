@@ -1,5 +1,6 @@
 package org.openinkbridge.sdk
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -15,6 +16,7 @@ import android.view.SurfaceView
  * Automatically handles stylus coordinate capturing, high-frequency motion history,
  * stroke smoothing, and hardware E-Ink rendering updates based on device vendor.
  */
+@SuppressLint("ClickableViewAccessibility")
 class OpenInkBridgeView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -32,6 +34,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
     private var strokeColor = Color.BLACK
     private var strokeWidth = 5f
     private var isDrawing = false
+    private var rawDrawingEnabled: Boolean? = null
 
     // Standard drawing paint for rendering historical strokes on screen
     private val renderPaint = Paint().apply {
@@ -82,6 +85,7 @@ class OpenInkBridgeView @JvmOverloads constructor(
     }
 
     fun setRawDrawingEnabled(enabled: Boolean) {
+        rawDrawingEnabled = enabled
         epdAdapterManager.activeAdapter.setRawDrawingEnabled(enabled)
     }
 
@@ -252,11 +256,18 @@ class OpenInkBridgeView @JvmOverloads constructor(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        if (epdAdapterManager.bind()) {
+            epdAdapterManager.activeAdapter.setBrushStyle(strokeColor, strokeWidth)
+            epdAdapterManager.activeAdapter.setStylusOnly(stylusOnly)
+            rawDrawingEnabled?.let(epdAdapterManager.activeAdapter::setRawDrawingEnabled)
+        }
     }
 
     override fun onDetachedFromWindow() {
         // Auto-release hardware E-Ink rendering locks to prevent screen flickering in other apps
-        epdAdapterManager.activeAdapter.endStroke()
+        if (isDrawing) runCatching { epdAdapterManager.activeAdapter.endStroke() }
+        strokePoints.clear()
+        isDrawing = false
         epdAdapterManager.release()
         super.onDetachedFromWindow()
     }

@@ -36,11 +36,17 @@ export interface NativeStrokeEnvelope {
     };
 }
 
-interface NativeBridgeApi {
+interface DirectNativeBridgeApi {
     setWritingMode(enabled: boolean, optionsJson: string): void;
     onStrokeDrawn?(): void;
     onStrokeDrawnForSession?(messageJson: string): void;
 }
+
+interface MessageNativeBridgeApi {
+    postMessage(messageJson: string): void;
+}
+
+type NativeBridgeApi = DirectNativeBridgeApi | MessageNativeBridgeApi;
 
 interface SessionRecord {
     id: string;
@@ -209,7 +215,7 @@ export class OpenInkBridge {
     /** Check whether a callable native OpenInkBridge interface is present. */
     public isSupported(): boolean {
         const nativeBridge = getNativeBridge();
-        const supported = typeof nativeBridge?.setWritingMode === 'function';
+        const supported = isDirectNativeBridge(nativeBridge) || isMessageNativeBridge(nativeBridge);
         logger.debug(
             Subsystem.Backend,
             supported ? 'NativeBridge' : 'PointerFallback',
@@ -271,13 +277,22 @@ export class OpenInkBridge {
         if (!nativeBridge) return;
 
         try {
-            if (typeof nativeBridge.onStrokeDrawnForSession === 'function') {
+            const record = this.sessions.get(sessionId);
+            if (isMessageNativeBridge(nativeBridge) && record) {
+                nativeBridge.postMessage(JSON.stringify({
+                    protocolVersion: BRIDGE_PROTOCOL_VERSION,
+                    type: 'strokeDrawn',
+                    sessionId,
+                    canvasId: record.canvasId
+                }));
+            } else if (isDirectNativeBridge(nativeBridge) && typeof nativeBridge.onStrokeDrawnForSession === 'function') {
                 nativeBridge.onStrokeDrawnForSession(JSON.stringify({
                     protocolVersion: BRIDGE_PROTOCOL_VERSION,
                     type: 'strokeDrawn',
-                    sessionId
+                    sessionId,
+                    canvasId: record?.canvasId || sessionId
                 }));
-            } else if (typeof nativeBridge.onStrokeDrawn === 'function') {
+            } else if (isDirectNativeBridge(nativeBridge) && typeof nativeBridge.onStrokeDrawn === 'function') {
                 nativeBridge.onStrokeDrawn();
             }
         } catch (error) {
@@ -527,7 +542,11 @@ export class OpenInkBridge {
         };
 
         try {
-            nativeBridge.setWritingMode(enabled, JSON.stringify(payload));
+            if (isMessageNativeBridge(nativeBridge)) {
+                nativeBridge.postMessage(JSON.stringify(payload));
+            } else {
+                nativeBridge.setWritingMode(enabled, JSON.stringify(payload));
+            }
             logger.info(
                 Subsystem.JsBridge,
                 'NativeBridge',
@@ -694,6 +713,14 @@ function getBridgeWindow(): BridgeWindow | null {
 
 function getNativeBridge(): NativeBridgeApi | undefined {
     return getBridgeWindow()?.OpenInkBridgeNative;
+}
+
+function isDirectNativeBridge(value: NativeBridgeApi | undefined): value is DirectNativeBridgeApi {
+    return typeof (value as DirectNativeBridgeApi | undefined)?.setWritingMode === 'function';
+}
+
+function isMessageNativeBridge(value: NativeBridgeApi | undefined): value is MessageNativeBridgeApi {
+    return typeof (value as MessageNativeBridgeApi | undefined)?.postMessage === 'function';
 }
 
 function readIdentifier(value: unknown): string | undefined {

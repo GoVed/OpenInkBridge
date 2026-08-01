@@ -1,5 +1,6 @@
 package org.openinkbridge.sdk
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
@@ -9,17 +10,21 @@ import android.view.View
 import android.view.SurfaceView
 import android.graphics.PixelFormat
 
+@SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 class OpenInkBridgeOverlayCanvas(
     context: Context,
     private val epdAdapterManager: EpdAdapterManager
 ) : SurfaceView(context) {
 
     var onStrokeCompleted: ((List<PenPoint>) -> Unit)? = null
+    internal var onStrokeCaptured: ((List<PenPoint>, PenPointCoordinateSpace, BridgeSessionRoute?) -> Unit)? = null
     
     private val strokePoints = mutableListOf<PenPoint>()
     private var strokeColor = Color.BLACK
     private var strokeWidth = 5f
     private var isDrawing = false
+    @Volatile private var configuredRoute: BridgeSessionRoute? = null
+    @Volatile private var capturedRoute: BridgeSessionRoute? = null
 
     init {
         // Enable onDraw on SurfaceView so standard vector path drawing works
@@ -41,6 +46,36 @@ class OpenInkBridgeOverlayCanvas(
         this.strokeColor = color
         this.strokeWidth = width
         epdAdapterManager.activeAdapter.setBrushStyle(color, width)
+    }
+
+    internal fun rebindAdapter() {
+        epdAdapterManager.activeAdapter.setStylusOnly(stylusOnly)
+        epdAdapterManager.activeAdapter.setBrushStyle(strokeColor, strokeWidth)
+    }
+
+    internal fun configureSessionRoute(route: BridgeSessionRoute?) {
+        configuredRoute = route
+    }
+
+    internal fun beginVendorStroke() {
+        capturedRoute = configuredRoute
+    }
+
+    internal fun dispatchCompletedStroke(
+        points: List<PenPoint>,
+        coordinateSpace: PenPointCoordinateSpace
+    ) {
+        val route = capturedRoute ?: configuredRoute
+        capturedRoute = null
+        onStrokeCaptured?.invoke(points, coordinateSpace, route)
+        onStrokeCompleted?.invoke(points)
+    }
+
+    internal fun cancelCurrentStroke() {
+        if (isDrawing) runCatching { epdAdapterManager.activeAdapter.endStroke() }
+        strokePoints.clear()
+        capturedRoute = null
+        isDrawing = false
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -79,6 +114,7 @@ class OpenInkBridgeOverlayCanvas(
         when (event.action) {
             MotionEvent.ACTION_DOWN -> {
                 isDrawing = true
+                capturedRoute = configuredRoute
                 strokePoints.clear()
                 strokePoints.add(point)
                 
@@ -116,7 +152,10 @@ class OpenInkBridgeOverlayCanvas(
                     epdAdapterManager.activeAdapter.endStroke()
 
                     
-                    onStrokeCompleted?.invoke(strokePoints.toList())
+                    dispatchCompletedStroke(
+                        strokePoints.toList(),
+                        PenPointCoordinateSpace.OVERLAY_LOCAL_PHYSICAL_PIXELS
+                    )
                     strokePoints.clear()
                     isDrawing = false
                 }
