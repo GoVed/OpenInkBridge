@@ -1,12 +1,12 @@
 # Linux Native Client Integration Guide
 
-For Linux-based E-Ink devices such as the reMarkable 1/2 and Kobo tablets, OpenInkBridge runs as a native background daemon rather than inside a virtual machine (like JVM/Android).
+On reMarkable 1/2, OpenInkBridge can run as an experimental native process rather than inside a virtual machine. Kobo support is planned and is not implemented by the current backend.
 
 ---
 
 ## 1. Native Execution Pipeline
 
-On reMarkable tablets, application interfaces run outside standard desktop window managers. The `openinkbridge-linux` client achieves latency-free drawing by reading absolute touch coordinates directly from the hardware digitizer sensor and drawing directly onto the screen's memory-mapped framebuffer.
+On reMarkable tablets, application interfaces run outside standard desktop window managers. The `openinkbridge-linux` client reads absolute coordinates from a configured digitizer and draws directly into a validated framebuffer mapping. Actual latency depends on the device, waveform, firmware, and workload.
 
 ```
                   +--------------------------------+

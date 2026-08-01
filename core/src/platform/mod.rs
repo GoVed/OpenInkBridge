@@ -84,7 +84,6 @@ impl DisplayTransform {
         }
     }
 
-
     /// Maps raw input coordinates (sensor units) to display coordinates (pixel space).
     pub fn transform(&self, raw_x: f32, raw_y: f32) -> (f32, f32) {
         let (x, y) = if self.swap_xy {
@@ -136,5 +135,9 @@ pub trait EpdBackend {
     fn render_strokes(&mut self, points: &[Point], color: u32, width: f32) -> Result<(), String>;
 
     /// Trigger E-Ink screen refresh with specified refresh mode and optional bounding box region.
-    fn request_refresh(&mut self, mode: RefreshMode, rect: Option<(i32, i32, i32, i32)>) -> Result<(), String>;
+    fn request_refresh(
+        &mut self,
+        mode: RefreshMode,
+        rect: Option<(i32, i32, i32, i32)>,
+    ) -> Result<(), String>;
 }

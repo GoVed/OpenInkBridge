@@ -5,6 +5,6 @@ pub mod input;
 #[cfg(test)]
 pub mod tests;
 
-pub use backend::RemarkableBackend;
+pub use backend::{RemarkableBackend, RemarkableConfig};
 pub use display::DisplayRenderer;
 pub use input::InputParser;
