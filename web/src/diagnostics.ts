@@ -1,4 +1,5 @@
 import { logger, LogEntry, LogLevel } from './logger';
+import { SDK_VERSION } from './generated/version';
 
 export interface CapabilitiesReport {
     pressure: boolean;
@@ -39,7 +40,7 @@ export function collectDiagnostics(activeBackend?: string, isNativeSupported?: b
         : 'OpenInkBridgeNative bridge object not detected on window; using HTML5 PointerEvents fallback';
 
     return {
-        version: '0.1.2',
+        version: SDK_VERSION,
         platform: 'Web SDK',
         userAgent: ua,
         devicePixelRatio: dpr,

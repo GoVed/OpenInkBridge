@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { OpenInkBridgeCanvas, CanvasOptions, StrokePoint } from './index';
+import { OpenInkBridgeCanvas, CanvasOptions } from './canvas';
+import { StrokePoint } from './model';
 
 export interface OpenInkBridgeCanvasProps extends CanvasOptions {
     onStrokeFinished?: (points: StrokePoint[]) => void;
@@ -17,6 +18,7 @@ export const OpenInkBridgeCanvasComponent: React.FC<OpenInkBridgeCanvasProps> = 
     strokeColor = "#000000",
     strokeWidth = 4,
     smoothing = true,
+    stylusOnly = true,
     onStrokeFinished,
     className,
     style,
@@ -33,7 +35,8 @@ export const OpenInkBridgeCanvasComponent: React.FC<OpenInkBridgeCanvasProps> = 
         const osCanvas = new OpenInkBridgeCanvas(canvas, {
             strokeColor,
             strokeWidth,
-            smoothing
+            smoothing,
+            stylusOnly
         });
         osCanvasRef.current = osCanvas;
         osCanvas.enableDrawing();
@@ -44,16 +47,17 @@ export const OpenInkBridgeCanvasComponent: React.FC<OpenInkBridgeCanvasProps> = 
 
         return () => {
             if (unsubscribe) unsubscribe();
-            osCanvas.disableDrawing();
+            osCanvas.destroy();
+            if (osCanvasRef.current === osCanvas) osCanvasRef.current = null;
         };
-    }, [onStrokeFinished, smoothing]);
+    }, [onStrokeFinished, smoothing, stylusOnly]);
 
     // Handle dynamic color/width changes
     useEffect(() => {
         if (osCanvasRef.current) {
-            osCanvasRef.current.setStyle(strokeColor, strokeWidth);
+            osCanvasRef.current.setStyle(strokeColor, strokeWidth, stylusOnly);
         }
-    }, [strokeColor, strokeWidth]);
+    }, [strokeColor, strokeWidth, stylusOnly]);
 
     const containerStyle: React.CSSProperties = {
         position: 'relative',
