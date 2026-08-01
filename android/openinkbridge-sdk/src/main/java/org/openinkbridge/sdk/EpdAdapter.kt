@@ -4,6 +4,39 @@ import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.View
 
+/** Capabilities that are implemented by a backend, rather than inferred from the device brand. */
+data class EpdAdapterCapabilities(
+    val directDrawing: Boolean = false,
+    val motionPrediction: Boolean = false,
+    val refreshModeControl: Boolean = false,
+    val fullRefresh: Boolean = false,
+    val drawingLimit: Boolean = false,
+    val rawDrawingToggle: Boolean = false,
+    val hardwareScribbleHandoff: Boolean = false
+)
+
+data class EpdAdapterProbeResult(
+    val supported: Boolean,
+    val reason: String? = null
+)
+
+enum class EpdAdapterState {
+    UNINITIALIZED,
+    OPERATIONAL,
+    DEGRADED,
+    UNAVAILABLE,
+    RELEASED
+}
+
+data class EpdAdapterStatus(
+    val state: EpdAdapterState,
+    val reason: String? = null,
+    val capabilities: EpdAdapterCapabilities = EpdAdapterCapabilities()
+) {
+    val canRender: Boolean
+        get() = state == EpdAdapterState.OPERATIONAL || state == EpdAdapterState.DEGRADED
+}
+
 interface EpdAdapter {
     /**
      * Bind the adapter to the rendering view.
@@ -90,4 +123,13 @@ interface EpdAdapter {
      * Set a boundary limit rectangle for low-latency drawing.
      */
     fun setDrawingLimit(rect: android.graphics.Rect?) {}
+}
+
+/**
+ * Optional runtime capability contract for adapters. Keeping this separate preserves binary
+ * compatibility with adapters compiled against the original [EpdAdapter] interface.
+ */
+interface EpdAdapterIntrospection {
+    fun probe(view: View): EpdAdapterProbeResult
+    fun status(): EpdAdapterStatus
 }

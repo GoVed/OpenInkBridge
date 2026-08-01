@@ -3,6 +3,8 @@ plugins {
     id 'kotlin-android'
 }
 
+def sdkVersion = "0.1.3"
+
 android {
     namespace 'org.openinkbridge.sdk'
     compileSdkVersion 35
@@ -11,7 +13,8 @@ android {
         minSdkVersion 24
         targetSdkVersion 35
         versionCode 4
-        versionName "0.1.3"
+        versionName sdkVersion
+        buildConfigField "String", "SDK_VERSION", "\"${sdkVersion}\""
     }
 
     buildTypes {
@@ -19,6 +22,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    sourceSets {
+        test.resources.srcDir "$rootDir/../contracts"
     }
 
     compileOptions {
@@ -35,12 +46,20 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
     implementation "androidx.core:core-ktx:1.13.1"
     implementation "androidx.appcompat:appcompat:1.7.0"
+    // 1.13 provides origin-scoped WebMessageListener support while remaining compatible with
+    // this project's Kotlin 1.9 / AGP 8.2 lint toolchain.
+    implementation "androidx.webkit:webkit:1.13.0"
     
     // Google's Jetpack Ink API for low-latency drawing fallback
-    implementation "androidx.input:input-motionprediction:1.0.0-beta03"
+    implementation "androidx.input:input-motionprediction:1.0.0"
     
     // Onyx Pen SDK for hardware-level low latency drawing
-    implementation "com.onyx.android.sdk:onyxsdk-pen:1.5.4"
+    // Compile against the vendor API without forcing it into every consumer. Applications that
+    // want Onyx acceleration opt in with the matching runtime dependency (see android/README.md).
+    compileOnly "com.onyx.android.sdk:onyxsdk-pen:1.5.4"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20240303"
 }
 
 task inspectOnyxClasses {

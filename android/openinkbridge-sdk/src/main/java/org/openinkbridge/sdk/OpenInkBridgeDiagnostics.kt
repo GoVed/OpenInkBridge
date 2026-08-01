@@ -1,5 +1,6 @@
 package org.openinkbridge.sdk
 
+import android.annotation.SuppressLint
 import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
@@ -10,13 +11,25 @@ data class CapabilitiesReport(
     val hover: Boolean = true,
     val eraser: Boolean = true,
     val refreshModes: List<String> = listOf("SPEED", "BALANCED", "QUALITY"),
-    val hardwareAcceleration: Boolean = true
+    val hardwareAcceleration: Boolean = true,
+    val motionPrediction: Boolean = false,
+    val refreshModeControl: Boolean = false,
+    val drawingLimit: Boolean = false,
+    val rawDrawingToggle: Boolean = false
+)
+
+data class BackendAttemptReport(
+    val backend: String,
+    val probeSupported: Boolean,
+    val state: String,
+    val reason: String?
 )
 
 data class DiagnosticsData(
-    val version: String = "0.1.2",
+    val version: String = BuildConfig.SDK_VERSION,
     val platform: String = "Android SDK",
     val osVersion: String = Build.VERSION.RELEASE,
+    @SuppressLint("AnnotateVersionCheck")
     val apiLevel: Int = Build.VERSION.SDK_INT,
     val deviceModel: String = Build.MODEL,
     val manufacturer: String = Build.MANUFACTURER,
@@ -28,7 +41,10 @@ data class DiagnosticsData(
     val capabilities: CapabilitiesReport,
     val refreshMode: String,
     val directDrawingActive: Boolean,
-    val recentLogs: List<LogEntry>
+    val recentLogs: List<LogEntry>,
+    val backendState: String = EpdAdapterState.UNINITIALIZED.name,
+    val backendStatusReason: String? = null,
+    val backendAttempts: List<BackendAttemptReport> = emptyList()
 ) {
     fun toJson(): String {
         val obj = JSONObject().apply {
@@ -51,10 +67,27 @@ data class DiagnosticsData(
                 put("eraser", capabilities.eraser)
                 put("refreshModes", JSONArray(capabilities.refreshModes))
                 put("hardwareAcceleration", capabilities.hardwareAcceleration)
+                put("motionPrediction", capabilities.motionPrediction)
+                put("refreshModeControl", capabilities.refreshModeControl)
+                put("drawingLimit", capabilities.drawingLimit)
+                put("rawDrawingToggle", capabilities.rawDrawingToggle)
             }
             put("capabilities", caps)
             put("refreshMode", refreshMode)
             put("directDrawingActive", directDrawingActive)
+            put("backendState", backendState)
+            put("backendStatusReason", backendStatusReason ?: JSONObject.NULL)
+
+            val attempts = JSONArray()
+            for (attempt in backendAttempts) {
+                attempts.put(JSONObject().apply {
+                    put("backend", attempt.backend)
+                    put("probeSupported", attempt.probeSupported)
+                    put("state", attempt.state)
+                    put("reason", attempt.reason ?: JSONObject.NULL)
+                })
+            }
+            put("backendAttempts", attempts)
 
             val logsArr = JSONArray()
             for (entry in recentLogs) {
@@ -80,22 +113,43 @@ object OpenInkBridgeDiagnostics {
         val activeAdapter = adapterManager?.activeAdapter
         val backendName = activeAdapter?.javaClass?.simpleName ?: "UnboundAdapter"
         val isDirectDrawing = activeAdapter?.isDirectDrawingActive() ?: false
+        val adapterStatus = activeAdapter?.let { adapter ->
+            runCatching {
+                (adapter as? EpdAdapterIntrospection)?.status()
+                    ?: adapterManager.selectionReport.selectedStatus
+            }.getOrElse { error ->
+                EpdAdapterStatus(
+                    state = EpdAdapterState.UNAVAILABLE,
+                    reason = "Status query failed: ${error.message ?: error.javaClass.simpleName}"
+                )
+            }
+        } ?: EpdAdapterStatus(EpdAdapterState.UNINITIALIZED)
 
-        val available = listOf(
-            "OnyxBooxEpdAdapter",
-            "BigmeEpdAdapter",
-            "JetpackInkAdapter",
-            "FallbackCanvasAdapter"
-        )
+        val available = adapterManager?.selectionReport?.attempts
+            ?.filter { it.probeSupported && it.state != EpdAdapterState.UNAVAILABLE }
+            ?.map { it.backend }
+            .orEmpty()
+            .plus("FallbackCanvasAdapter")
+            .distinct()
 
-        val fallbackReason = if (backendName == "FallbackCanvasAdapter") {
-            "No specialized E-Ink SDK detected for ${Build.MANUFACTURER} / ${Build.BRAND} / ${Build.MODEL}"
-        } else {
-            null
+        val fallbackReason = adapterManager?.selectionReport?.fallbackReason
+            ?: if (backendName == "FallbackCanvasAdapter") {
+                "No specialized E-Ink SDK detected for ${Build.MANUFACTURER} / ${Build.BRAND} / ${Build.MODEL}"
+            } else {
+                null
+            }
+
+        val backendAttempts = adapterManager?.selectionReport?.attempts.orEmpty().map { attempt ->
+            BackendAttemptReport(
+                backend = attempt.backend,
+                probeSupported = attempt.probeSupported,
+                state = attempt.state.name,
+                reason = attempt.reason
+            )
         }
 
         return DiagnosticsData(
-            version = "0.1.2",
+            version = BuildConfig.SDK_VERSION,
             platform = "Android SDK",
             osVersion = Build.VERSION.RELEASE,
             apiLevel = Build.VERSION.SDK_INT,
@@ -111,12 +165,23 @@ object OpenInkBridgeDiagnostics {
                 tilt = Build.MANUFACTURER.lowercase().contains("onyx"),
                 hover = true,
                 eraser = true,
-                refreshModes = listOf("SPEED", "BALANCED", "QUALITY", "REGAL", "DU"),
-                hardwareAcceleration = isDirectDrawing
+                refreshModes = if (adapterStatus.capabilities.refreshModeControl) {
+                    listOf("SPEED", "BALANCED", "QUALITY", "REGAL", "DU")
+                } else {
+                    emptyList()
+                },
+                hardwareAcceleration = isDirectDrawing,
+                motionPrediction = adapterStatus.capabilities.motionPrediction,
+                refreshModeControl = adapterStatus.capabilities.refreshModeControl,
+                drawingLimit = adapterStatus.capabilities.drawingLimit,
+                rawDrawingToggle = adapterStatus.capabilities.rawDrawingToggle
             ),
-            refreshMode = "SPEED",
+            refreshMode = if (adapterStatus.capabilities.refreshModeControl) "SPEED" else "UNSUPPORTED",
             directDrawingActive = isDirectDrawing,
-            recentLogs = OpenInkBridgeLogger.getRingBufferLogs()
+            recentLogs = OpenInkBridgeLogger.getRingBufferLogs(),
+            backendState = adapterStatus.state.name,
+            backendStatusReason = adapterStatus.reason,
+            backendAttempts = backendAttempts
         )
     }
 
@@ -128,6 +193,10 @@ object OpenInkBridgeDiagnostics {
         sb.append("Platform: ${diag.platform} (Android ${diag.osVersion}, API ${diag.apiLevel})\n")
         sb.append("Device: ${diag.manufacturer} ${diag.modelName()} (${diag.brand} / ${diag.hardware})\n")
         sb.append("Selected Backend: ${diag.selectedBackend}\n")
+        sb.append("Backend State: ${diag.backendState}\n")
+        if (diag.backendStatusReason != null) {
+            sb.append("Backend Status: ${diag.backendStatusReason}\n")
+        }
         sb.append("Available Backends: ${diag.availableBackends.joinToString(", ")}\n")
         if (diag.fallbackReason != null) {
             sb.append("Fallback Reason: ${diag.fallbackReason}\n")
@@ -139,6 +208,9 @@ object OpenInkBridgeDiagnostics {
         sb.append("  - Eraser: ${if (diag.capabilities.eraser) "Supported" else "Unsupported"}\n")
         sb.append("  - Refresh Modes: [${diag.capabilities.refreshModes.joinToString(", ")}]\n")
         sb.append("  - Hardware Acceleration: ${if (diag.capabilities.hardwareAcceleration) "Enabled" else "Disabled"}\n")
+        sb.append("  - Motion Prediction: ${if (diag.capabilities.motionPrediction) "Supported" else "Unsupported"}\n")
+        sb.append("  - Refresh Control: ${if (diag.capabilities.refreshModeControl) "Supported" else "Unsupported"}\n")
+        sb.append("  - Drawing Limit: ${if (diag.capabilities.drawingLimit) "Supported" else "Unsupported"}\n")
         sb.append("Refresh Mode: ${diag.refreshMode}\n")
         sb.append("Direct Drawing Active: ${diag.directDrawingActive}\n")
         sb.append("===============================================\n")

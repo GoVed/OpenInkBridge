@@ -21,671 +21,1263 @@ var OpenInkBridge = (() => {
   // src/global.ts
   var global_exports = {};
   __export(global_exports, {
+    BRIDGE_PROTOCOL_VERSION: () => BRIDGE_PROTOCOL_VERSION,
+    LogLevel: () => LogLevel,
+    OpenInkBridge: () => OpenInkBridge,
     OpenInkBridgeCanvas: () => OpenInkBridgeCanvas,
+    OpenInkBridgeSession: () => OpenInkBridgeSession,
+    SDK_VERSION: () => SDK_VERSION,
+    Subsystem: () => Subsystem,
+    collectDiagnostics: () => collectDiagnostics,
+    configureOpenInkBridgeWasmLoader: () => configureOpenInkBridgeWasmLoader,
+    createBugReport: () => createBugReport,
+    dumpConfiguration: () => dumpConfiguration,
     initOpenInkBridgeWasm: () => initOpenInkBridgeWasm,
-    openInkBridge: () => openInkBridge
+    isOpenInkBridgeWasmInitialized: () => isOpenInkBridgeWasmInitialized,
+    logger: () => logger,
+    openInkBridge: () => openInkBridge,
+    parseNativeStrokePayload: () => parseNativeStrokePayload,
+    smoothStrokeJs: () => smoothStrokeJs
   });
 
-  // src/bridge.ts
-  var OpenInkBridge = class {
+  // src/logger.ts
+  var LogLevel = /* @__PURE__ */ ((LogLevel3) => {
+    LogLevel3[LogLevel3["ERROR"] = 0] = "ERROR";
+    LogLevel3[LogLevel3["WARN"] = 1] = "WARN";
+    LogLevel3[LogLevel3["INFO"] = 2] = "INFO";
+    LogLevel3[LogLevel3["DEBUG"] = 3] = "DEBUG";
+    LogLevel3[LogLevel3["TRACE"] = 4] = "TRACE";
+    return LogLevel3;
+  })(LogLevel || {});
+  var Subsystem = /* @__PURE__ */ ((Subsystem2) => {
+    Subsystem2["Core"] = "Core";
+    Subsystem2["Backend"] = "Backend";
+    Subsystem2["Renderer"] = "Renderer";
+    Subsystem2["PenInput"] = "PenInput";
+    Subsystem2["Refresh"] = "Refresh";
+    Subsystem2["Synchronization"] = "Synchronization";
+    Subsystem2["JsBridge"] = "JsBridge";
+    Subsystem2["Android"] = "Android";
+    Subsystem2["Linux"] = "Linux";
+    Subsystem2["Performance"] = "Performance";
+    Subsystem2["Configuration"] = "Configuration";
+    Subsystem2["Networking"] = "Networking";
+    return Subsystem2;
+  })(Subsystem || {});
+  var OpenInkBridgeLogger = class {
     constructor() {
-      this.strokeCallbacks = [];
-      this.strokeStartCallbacks = [];
-      this.strokeUpdateCallbacks = [];
-      this.fallbackCanvas = null;
-      this.fallbackCtx = null;
-      this.currentFallbackStroke = [];
-      this.isDrawingFallback = false;
-      if (typeof window !== "undefined") {
-        window.onOpenInkBridgeStrokeFinished = (strokeJson) => {
-          try {
-            const points = JSON.parse(strokeJson);
-            this.notifyStrokeCallbacks(points);
-          } catch (e) {
-            console.error("OpenInkBridge: Failed to parse stroke data from native client", e);
-          }
-        };
-      }
+      this.activeLogLevel = 2 /* INFO */;
+      this.ringBuffer = [];
+      this.maxBufferCapacity = 500;
+      this.lastTraceTimestamp = 0;
     }
-    /**
-     * Check if the web app is running inside a native OpenInkBridge container.
-     */
-    isSupported() {
-      return typeof window !== "undefined" && typeof window.OpenInkBridgeNative !== "undefined";
-    }
-    /**
-     * Set writing mode. 
-     * If supported, it enables the high-performance native E-Ink overlay.
-     * If running in a standard web browser, it sets up standard pointer fallback listeners.
-     */
-    setWritingMode(enabled, targetElement, options) {
-      if (this.isSupported()) {
-        const rect = targetElement.getBoundingClientRect();
-        const payload = {
-          color: options?.color || "#000000",
-          width: options?.width || 4,
-          stylusOnly: options?.stylusOnly !== false,
-          rect: {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height
-          }
-        };
-        window.OpenInkBridgeNative.setWritingMode(enabled, JSON.stringify(payload));
-        return;
-      }
-      if (enabled) {
-        this.setupFallbackListeners(targetElement, options);
+    setLogLevel(level) {
+      if (typeof level === "string") {
+        switch (level.toUpperCase()) {
+          case "ERROR":
+            this.activeLogLevel = 0 /* ERROR */;
+            break;
+          case "WARN":
+          case "WARNING":
+            this.activeLogLevel = 1 /* WARN */;
+            break;
+          case "INFO":
+            this.activeLogLevel = 2 /* INFO */;
+            break;
+          case "DEBUG":
+            this.activeLogLevel = 3 /* DEBUG */;
+            break;
+          case "TRACE":
+            this.activeLogLevel = 4 /* TRACE */;
+            break;
+          default:
+            this.activeLogLevel = 2 /* INFO */;
+            break;
+        }
       } else {
-        this.removeFallbackListeners(targetElement);
+        this.activeLogLevel = level;
       }
     }
-    /**
-     * Notify the native bridge that the stroke has been successfully redrawn on the software canvas.
-     */
-    onStrokeDrawn() {
-      if (this.isSupported() && typeof window.OpenInkBridgeNative.onStrokeDrawn === "function") {
-        window.OpenInkBridgeNative.onStrokeDrawn();
+    getLogLevel() {
+      return this.activeLogLevel;
+    }
+    log(level, subsystem, backend, event, message, parameters) {
+      const entry = {
+        timestamp: Date.now(),
+        level,
+        subsystem,
+        backend: backend || "Browser",
+        event,
+        message,
+        parameters
+      };
+      if (this.ringBuffer.length >= this.maxBufferCapacity) {
+        this.ringBuffer.shift();
       }
-    }
-    /**
-     * Listen to finalized strokes.
-     */
-    onStrokeFinished(callback) {
-      this.strokeCallbacks.push(callback);
-      return () => {
-        this.strokeCallbacks = this.strokeCallbacks.filter((cb) => cb !== callback);
-      };
-    }
-    /**
-     * Listen to the start of a stylus stroke (pen down).
-     */
-    onStrokeStarted(callback) {
-      this.strokeStartCallbacks.push(callback);
-      return () => {
-        this.strokeStartCallbacks = this.strokeStartCallbacks.filter((cb) => cb !== callback);
-      };
-    }
-    /**
-     * Listen to live updates during a stylus stroke (pen drag).
-     */
-    onStrokeUpdated(callback) {
-      this.strokeUpdateCallbacks.push(callback);
-      return () => {
-        this.strokeUpdateCallbacks = this.strokeUpdateCallbacks.filter((cb) => cb !== callback);
-      };
-    }
-    notifyStrokeCallbacks(points) {
-      this.strokeCallbacks.forEach((cb) => cb(points));
-    }
-    notifyStrokeStarted(point) {
-      this.strokeStartCallbacks.forEach((cb) => cb(point));
-    }
-    notifyStrokeUpdated(point) {
-      this.strokeUpdateCallbacks.forEach((cb) => cb(point));
-    }
-    setupFallbackListeners(element, options) {
-      const handlePointerDown = (e) => {
-        if (options?.stylusOnly && e.pointerType !== "pen") return;
-        e.preventDefault();
-        try {
-          element.setPointerCapture(e.pointerId);
-        } catch (err) {
-        }
-        this.isDrawingFallback = true;
-        const pt = this.getPointFromEvent(e, element);
-        this.currentFallbackStroke = [pt];
-        this.notifyStrokeStarted(pt);
-      };
-      const handlePointerMove = (e) => {
-        if (!this.isDrawingFallback) return;
-        if (options?.stylusOnly && e.pointerType !== "pen") return;
-        e.preventDefault();
-        const pt = this.getPointFromEvent(e, element);
-        this.currentFallbackStroke.push(pt);
-        this.notifyStrokeUpdated(pt);
-      };
-      const handlePointerUp = (e) => {
-        if (!this.isDrawingFallback) return;
-        this.isDrawingFallback = false;
-        try {
-          element.releasePointerCapture(e.pointerId);
-        } catch (err) {
-        }
-        if (this.currentFallbackStroke.length > 0) {
-          this.notifyStrokeCallbacks(this.currentFallbackStroke);
-        }
-        this.currentFallbackStroke = [];
-      };
-      const handlePointerCancel = (e) => {
-        if (!this.isDrawingFallback) return;
-        this.isDrawingFallback = false;
-        try {
-          element.releasePointerCapture(e.pointerId);
-        } catch (err) {
-        }
-        this.currentFallbackStroke = [];
-      };
-      element._openInkBridgeDown = handlePointerDown;
-      element._openInkBridgeMove = handlePointerMove;
-      element._openInkBridgeUp = handlePointerUp;
-      element._openInkBridgeCancel = handlePointerCancel;
-      element.addEventListener("pointerdown", handlePointerDown, { passive: false });
-      element.addEventListener("pointermove", handlePointerMove, { passive: false });
-      element.addEventListener("pointerup", handlePointerUp);
-      element.addEventListener("pointercancel", handlePointerCancel);
-      element.style.touchAction = "none";
-    }
-    removeFallbackListeners(element) {
-      const down = element._openInkBridgeDown;
-      const move = element._openInkBridgeMove;
-      const up = element._openInkBridgeUp;
-      const cancel = element._openInkBridgeCancel;
-      if (down) element.removeEventListener("pointerdown", down);
-      if (move) element.removeEventListener("pointermove", move);
-      if (up) element.removeEventListener("pointerup", up);
-      if (cancel) element.removeEventListener("pointercancel", cancel);
-      element.style.touchAction = "";
-    }
-    getPointFromEvent(e, element) {
-      const rect = element.getBoundingClientRect();
-      return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
-        pressure: e.pressure || 0.5,
-        tilt: e.tiltX || 0,
-        // Simplified tilt
-        timestamp: Date.now()
-      };
-    }
-  };
-  var openInkBridge = new OpenInkBridge();
-
-  // src/wasm/openinkbridge_core.js
-  var import_meta = {};
-  var Point = class {
-    __destroy_into_raw() {
-      const ptr = this.__wbg_ptr;
-      this.__wbg_ptr = 0;
-      PointFinalization.unregister(this);
-      return ptr;
-    }
-    free() {
-      const ptr = this.__destroy_into_raw();
-      wasm.__wbg_point_free(ptr, 0);
-    }
-    /**
-     * @returns {number}
-     */
-    get pressure() {
-      const ret = wasm.__wbg_get_point_pressure(this.__wbg_ptr);
-      return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get tilt() {
-      const ret = wasm.__wbg_get_point_tilt(this.__wbg_ptr);
-      return ret;
-    }
-    /**
-     * @returns {bigint}
-     */
-    get timestamp() {
-      const ret = wasm.__wbg_get_point_timestamp(this.__wbg_ptr);
-      return BigInt.asUintN(64, ret);
-    }
-    /**
-     * @returns {number}
-     */
-    get x() {
-      const ret = wasm.__wbg_get_point_x(this.__wbg_ptr);
-      return ret;
-    }
-    /**
-     * @returns {number}
-     */
-    get y() {
-      const ret = wasm.__wbg_get_point_y(this.__wbg_ptr);
-      return ret;
-    }
-    /**
-     * @param {number} arg0
-     */
-    set pressure(arg0) {
-      wasm.__wbg_set_point_pressure(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set tilt(arg0) {
-      wasm.__wbg_set_point_tilt(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {bigint} arg0
-     */
-    set timestamp(arg0) {
-      wasm.__wbg_set_point_timestamp(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set x(arg0) {
-      wasm.__wbg_set_point_x(this.__wbg_ptr, arg0);
-    }
-    /**
-     * @param {number} arg0
-     */
-    set y(arg0) {
-      wasm.__wbg_set_point_y(this.__wbg_ptr, arg0);
-    }
-  };
-  if (Symbol.dispose) Point.prototype[Symbol.dispose] = Point.prototype.free;
-  function smooth_stroke_wasm(points_json) {
-    let deferred2_0;
-    let deferred2_1;
-    try {
-      const ptr0 = passStringToWasm0(points_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-      const len0 = WASM_VECTOR_LEN;
-      const ret = wasm.smooth_stroke_wasm(ptr0, len0);
-      deferred2_0 = ret[0];
-      deferred2_1 = ret[1];
-      return getStringFromWasm0(ret[0], ret[1]);
-    } finally {
-      wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
-    }
-  }
-  function __wbg_get_imports() {
-    const import0 = {
-      __proto__: null,
-      __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
-        throw new Error(getStringFromWasm0(arg0, arg1));
-      },
-      __wbindgen_init_externref_table: function() {
-        const table = wasm.__wbindgen_externrefs;
-        const offset = table.grow(4);
-        table.set(0, void 0);
-        table.set(offset + 0, void 0);
-        table.set(offset + 1, null);
-        table.set(offset + 2, true);
-        table.set(offset + 3, false);
-      }
-    };
-    return {
-      __proto__: null,
-      "./openinkbridge_core_bg.js": import0
-    };
-  }
-  var PointFinalization = typeof FinalizationRegistry === "undefined" ? { register: () => {
-  }, unregister: () => {
-  } } : new FinalizationRegistry((ptr) => wasm.__wbg_point_free(ptr, 1));
-  function getStringFromWasm0(ptr, len) {
-    return decodeText(ptr >>> 0, len);
-  }
-  var cachedUint8ArrayMemory0 = null;
-  function getUint8ArrayMemory0() {
-    if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
-      cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
-    }
-    return cachedUint8ArrayMemory0;
-  }
-  function passStringToWasm0(arg, malloc, realloc) {
-    if (realloc === void 0) {
-      const buf = cachedTextEncoder.encode(arg);
-      const ptr2 = malloc(buf.length, 1) >>> 0;
-      getUint8ArrayMemory0().subarray(ptr2, ptr2 + buf.length).set(buf);
-      WASM_VECTOR_LEN = buf.length;
-      return ptr2;
-    }
-    let len = arg.length;
-    let ptr = malloc(len, 1) >>> 0;
-    const mem = getUint8ArrayMemory0();
-    let offset = 0;
-    for (; offset < len; offset++) {
-      const code = arg.charCodeAt(offset);
-      if (code > 127) break;
-      mem[ptr + offset] = code;
-    }
-    if (offset !== len) {
-      if (offset !== 0) {
-        arg = arg.slice(offset);
-      }
-      ptr = realloc(ptr, len, len = offset + arg.length * 3, 1) >>> 0;
-      const view = getUint8ArrayMemory0().subarray(ptr + offset, ptr + len);
-      const ret = cachedTextEncoder.encodeInto(arg, view);
-      offset += ret.written;
-      ptr = realloc(ptr, len, offset, 1) >>> 0;
-    }
-    WASM_VECTOR_LEN = offset;
-    return ptr;
-  }
-  var cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-  cachedTextDecoder.decode();
-  var MAX_SAFARI_DECODE_BYTES = 2146435072;
-  var numBytesDecoded = 0;
-  function decodeText(ptr, len) {
-    numBytesDecoded += len;
-    if (numBytesDecoded >= MAX_SAFARI_DECODE_BYTES) {
-      cachedTextDecoder = new TextDecoder("utf-8", { ignoreBOM: true, fatal: true });
-      cachedTextDecoder.decode();
-      numBytesDecoded = len;
-    }
-    return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
-  }
-  var cachedTextEncoder = new TextEncoder();
-  if (!("encodeInto" in cachedTextEncoder)) {
-    cachedTextEncoder.encodeInto = function(arg, view) {
-      const buf = cachedTextEncoder.encode(arg);
-      view.set(buf);
-      return {
-        read: arg.length,
-        written: buf.length
-      };
-    };
-  }
-  var WASM_VECTOR_LEN = 0;
-  var wasmModule;
-  var wasmInstance;
-  var wasm;
-  function __wbg_finalize_init(instance, module) {
-    wasmInstance = instance;
-    wasm = instance.exports;
-    wasmModule = module;
-    cachedUint8ArrayMemory0 = null;
-    wasm.__wbindgen_start();
-    return wasm;
-  }
-  async function __wbg_load(module, imports) {
-    if (typeof Response === "function" && module instanceof Response) {
-      if (typeof WebAssembly.instantiateStreaming === "function") {
-        try {
-          return await WebAssembly.instantiateStreaming(module, imports);
-        } catch (e) {
-          const validResponse = module.ok && expectedResponseType(module.type);
-          if (validResponse && module.headers.get("Content-Type") !== "application/wasm") {
-            console.warn("`WebAssembly.instantiateStreaming` failed because your server does not serve Wasm with `application/wasm` MIME type. Falling back to `WebAssembly.instantiate` which is slower. Original error:\n", e);
-          } else {
-            throw e;
-          }
+      this.ringBuffer.push(entry);
+      if (level <= this.activeLogLevel && typeof console !== "undefined") {
+        const levelStr = LogLevel[level];
+        const prefix = `[${levelStr}][${subsystem}][${entry.backend}] ${event}:`;
+        const args = parameters ? [prefix, message, parameters] : [prefix, message];
+        switch (level) {
+          case 0 /* ERROR */:
+            console.error(...args);
+            break;
+          case 1 /* WARN */:
+            console.warn(...args);
+            break;
+          case 2 /* INFO */:
+            console.info(...args);
+            break;
+          case 3 /* DEBUG */:
+          case 4 /* TRACE */:
+            console.log(...args);
+            break;
         }
       }
-      const bytes = await module.arrayBuffer();
-      return await WebAssembly.instantiate(bytes, imports);
-    } else {
-      const instance = await WebAssembly.instantiate(module, imports);
-      if (instance instanceof WebAssembly.Instance) {
-        return { instance, module };
-      } else {
-        return instance;
-      }
     }
-    function expectedResponseType(type) {
-      switch (type) {
-        case "basic":
-        case "cors":
-        case "default":
-          return true;
+    shouldLogTrace(minIntervalMs = 20) {
+      const now = Date.now();
+      if (now >= this.lastTraceTimestamp + minIntervalMs) {
+        this.lastTraceTimestamp = now;
+        return true;
       }
       return false;
     }
+    error(subsystem, backend, event, message, params) {
+      this.log(0 /* ERROR */, subsystem, backend, event, message, params);
+    }
+    warn(subsystem, backend, event, message, params) {
+      this.log(1 /* WARN */, subsystem, backend, event, message, params);
+    }
+    info(subsystem, backend, event, message, params) {
+      this.log(2 /* INFO */, subsystem, backend, event, message, params);
+    }
+    debug(subsystem, backend, event, message, params) {
+      this.log(3 /* DEBUG */, subsystem, backend, event, message, params);
+    }
+    trace(subsystem, backend, event, message, params) {
+      this.log(4 /* TRACE */, subsystem, backend, event, message, params);
+    }
+    getRingBufferLogs() {
+      return [...this.ringBuffer];
+    }
+    clearRingBuffer() {
+      this.ringBuffer = [];
+    }
+  };
+  var logger = new OpenInkBridgeLogger();
+
+  // src/generated/version.ts
+  var SDK_VERSION = "0.1.3";
+
+  // src/diagnostics.ts
+  function collectDiagnostics(activeBackend, isNativeSupported) {
+    const isBrowser = typeof window !== "undefined";
+    const ua = isBrowser ? window.navigator.userAgent : "Node.js / Server Environment";
+    const dpr = isBrowser ? window.devicePixelRatio || 1 : 1;
+    const res = isBrowser ? `${window.screen?.width || 0}x${window.screen?.height || 0}` : "0x0";
+    const hasPointer = isBrowser && typeof window.PointerEvent !== "undefined";
+    const maxTouch = isBrowser ? window.navigator.maxTouchPoints || 0 : 0;
+    const backend = activeBackend || (isNativeSupported ? "NativeOpenInkBridge" : "PointerEventFallback");
+    const fallbackReason = isNativeSupported ? null : "OpenInkBridgeNative bridge object not detected on window; using HTML5 PointerEvents fallback";
+    return {
+      version: SDK_VERSION,
+      platform: "Web SDK",
+      userAgent: ua,
+      devicePixelRatio: dpr,
+      screenResolution: res,
+      hasPointerEvents: hasPointer,
+      maxTouchPoints: maxTouch,
+      selectedBackend: backend,
+      availableBackends: ["NativeOpenInkBridge", "PointerEventFallback", "WasmCore"],
+      fallbackReason,
+      capabilities: {
+        pressure: true,
+        tilt: true,
+        hover: true,
+        eraser: true,
+        refreshModes: ["Fast", "Partial", "Full", "Clear"],
+        hardwareAcceleration: !!isNativeSupported
+      },
+      refreshMode: isNativeSupported ? "Fast" : "Software",
+      recentLogs: logger.getRingBufferLogs()
+    };
   }
-  async function __wbg_init(module_or_path) {
-    if (wasm !== void 0) return wasm;
-    if (module_or_path !== void 0) {
-      if (Object.getPrototypeOf(module_or_path) === Object.prototype) {
-        ({ module_or_path } = module_or_path);
-      } else {
-        console.warn("using deprecated parameters for the initialization function; pass a single object instead");
+  function dumpConfiguration(activeBackend, isNativeSupported) {
+    const diag = collectDiagnostics(activeBackend, isNativeSupported);
+    let out = "";
+    out += "========== OpenInkBridge Diagnostics ==========\n";
+    out += `Version: ${diag.version}
+`;
+    out += `Platform: ${diag.platform}
+`;
+    out += `User Agent: ${diag.userAgent}
+`;
+    out += `Screen: ${diag.screenResolution} (DPR: ${diag.devicePixelRatio})
+`;
+    out += `Pointer Events: ${diag.hasPointerEvents ? "Supported" : "Unsupported"} (Max Touch: ${diag.maxTouchPoints})
+`;
+    out += `Selected Backend: ${diag.selectedBackend}
+`;
+    out += `Available Backends: ${diag.availableBackends.join(", ")}
+`;
+    if (diag.fallbackReason) {
+      out += `Fallback Reason: ${diag.fallbackReason}
+`;
+    }
+    out += "Capabilities:\n";
+    out += `  - Pressure: ${diag.capabilities.pressure ? "Supported" : "Unsupported"}
+`;
+    out += `  - Tilt: ${diag.capabilities.tilt ? "Supported" : "Unsupported"}
+`;
+    out += `  - Hover: ${diag.capabilities.hover ? "Supported" : "Unsupported"}
+`;
+    out += `  - Eraser: ${diag.capabilities.eraser ? "Supported" : "Unsupported"}
+`;
+    out += `  - Refresh Modes: [${diag.capabilities.refreshModes.join(", ")}]
+`;
+    out += `  - Hardware Acceleration: ${diag.capabilities.hardwareAcceleration ? "Enabled" : "Disabled"}
+`;
+    out += `Refresh Mode: ${diag.refreshMode}
+`;
+    out += "===============================================\n";
+    return out;
+  }
+  function createBugReport(activeBackend, isNativeSupported) {
+    let out = dumpConfiguration(activeBackend, isNativeSupported);
+    out += "\n========== Recent Warnings & Errors ==========\n";
+    const warnErrorLogs = logger.getRingBufferLogs().filter((e) => e.level === 1 /* WARN */ || e.level === 0 /* ERROR */);
+    if (warnErrorLogs.length === 0) {
+      out += "No warnings or errors reported in recent log buffer.\n";
+    } else {
+      for (const entry of warnErrorLogs) {
+        const levelStr = LogLevel[entry.level];
+        out += `[${levelStr}][${entry.subsystem}][${entry.backend}] ${entry.event}: ${entry.message}
+`;
       }
     }
-    if (module_or_path === void 0) {
-      module_or_path = new URL("openinkbridge_core_bg.wasm", import_meta.url);
+    out += "===============================================\n";
+    return out;
+  }
+
+  // src/model.ts
+  var INK_DOCUMENT_SCHEMA_VERSION = 1;
+  var DEFAULT_STROKE_COLOR = "#000000";
+  var DEFAULT_STROKE_WIDTH = 4;
+  var HEX_COLOR = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
+  var NAMED_COLOR = /^[a-z]{1,32}$/i;
+  var FUNCTION_COLOR = /^(?:rgb|rgba|hsl|hsla)\([0-9+\-.,%/\s]+\)$/i;
+  var SAFE_CSS_COLOR_CHARACTERS = /^[#(),.%+\-/\sa-z0-9]+$/i;
+  function normalizeStrokeColor(value, fallback = DEFAULT_STROKE_COLOR) {
+    if (typeof value !== "string") return fallback;
+    const color = value.trim();
+    if (color.length === 0 || color.length > 128 || !SAFE_CSS_COLOR_CHARACTERS.test(color)) {
+      return fallback;
     }
-    const imports = __wbg_get_imports();
-    if (typeof module_or_path === "string" || typeof Request === "function" && module_or_path instanceof Request || typeof URL === "function" && module_or_path instanceof URL) {
-      module_or_path = fetch(module_or_path);
+    if (HEX_COLOR.test(color) || NAMED_COLOR.test(color) || FUNCTION_COLOR.test(color)) {
+      return color;
     }
-    const { instance, module } = await __wbg_load(await module_or_path, imports);
-    return __wbg_finalize_init(instance, module);
+    if (typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("color", color)) {
+      return color;
+    }
+    return fallback;
+  }
+  function normalizeStrokeWidth(value, fallback = DEFAULT_STROKE_WIDTH) {
+    return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1024 ? value : fallback;
+  }
+  function isValidStrokePoint(value) {
+    if (!isRecord(value)) return false;
+    return isFiniteCoordinate(value.x) && isFiniteCoordinate(value.y) && isFiniteNumberInRange(value.pressure, 0, 16) && isFiniteNumberInRange(value.tilt, -180, 180) && isFiniteNumberInRange(value.timestamp, 0, Number.MAX_SAFE_INTEGER);
+  }
+  function validateStrokePoints(value, maxPoints = 1e5) {
+    if (!Array.isArray(value) || value.length > maxPoints) return null;
+    const points = [];
+    for (const candidate of value) {
+      if (!isValidStrokePoint(candidate)) return null;
+      points.push(cloneStrokePoint(candidate));
+    }
+    return points;
+  }
+  function cloneStrokePoint(point) {
+    return {
+      x: point.x,
+      y: point.y,
+      pressure: point.pressure,
+      tilt: point.tilt,
+      timestamp: point.timestamp
+    };
+  }
+  function cloneStrokePoints(points) {
+    return points.map(cloneStrokePoint);
+  }
+  function cloneInkDocument(document2) {
+    return {
+      schemaVersion: INK_DOCUMENT_SCHEMA_VERSION,
+      strokes: document2.strokes.map((stroke) => ({
+        id: stroke.id,
+        points: cloneStrokePoints(stroke.points),
+        style: { ...stroke.style }
+      }))
+    };
+  }
+  function escapeXmlAttribute(value) {
+    return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function formatSvgNumber(value) {
+    if (!Number.isFinite(value)) {
+      throw new TypeError("SVG coordinates and dimensions must be finite numbers");
+    }
+    return Object.is(value, -0) ? "0" : String(value);
+  }
+  function smoothStrokeJs(points) {
+    if (points.length < 3) return cloneStrokePoints(points);
+    const smoothed = [cloneStrokePoint(points[0])];
+    for (let index = 1; index < points.length - 1; index++) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const next = points[index + 1];
+      smoothed.push({
+        x: 0.25 * previous.x + 0.5 * current.x + 0.25 * next.x,
+        y: 0.25 * previous.y + 0.5 * current.y + 0.25 * next.y,
+        pressure: 0.25 * previous.pressure + 0.5 * current.pressure + 0.25 * next.pressure,
+        tilt: 0.25 * previous.tilt + 0.5 * current.tilt + 0.25 * next.tilt,
+        timestamp: current.timestamp
+      });
+    }
+    smoothed.push(cloneStrokePoint(points[points.length - 1]));
+    return smoothed;
+  }
+  function isRecord(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function isFiniteCoordinate(value) {
+    return isFiniteNumberInRange(value, -1e7, 1e7);
+  }
+  function isFiniteNumberInRange(value, minimum, maximum) {
+    return typeof value === "number" && Number.isFinite(value) && value >= minimum && value <= maximum;
+  }
+
+  // src/bridge.ts
+  var BRIDGE_PROTOCOL_VERSION = 1;
+  var MAX_NATIVE_PAYLOAD_LENGTH = 8 * 1024 * 1024;
+  var LEGACY_SESSION_ID = "legacy";
+  var CALLBACK_REGISTRY_KEY = "__openInkBridgeCallbackRegistryV1";
+  var sessionSequence = 0;
+  function parseNativeStrokePayload(input) {
+    let value = input;
+    if (typeof input === "string") {
+      if (input.length > MAX_NATIVE_PAYLOAD_LENGTH) return null;
+      try {
+        value = JSON.parse(input);
+      } catch {
+        return null;
+      }
+    }
+    if (Array.isArray(value)) {
+      const points2 = validateStrokePoints(value);
+      return points2 ? { protocolVersion: BRIDGE_PROTOCOL_VERSION, points: points2 } : null;
+    }
+    if (!isRecord2(value)) return null;
+    if (value.protocolVersion !== void 0 && value.protocolVersion !== BRIDGE_PROTOCOL_VERSION) {
+      return null;
+    }
+    if (value.type !== void 0 && value.type !== "strokeFinished") return null;
+    const sessionId = readIdentifier(value.sessionId);
+    const canvasId = readIdentifier(value.canvasId);
+    if (value.sessionId !== void 0 && !sessionId) return null;
+    if (value.canvasId !== void 0 && !canvasId) return null;
+    let pointValue = value.points;
+    if (pointValue === void 0 && Array.isArray(value.payload)) {
+      pointValue = value.payload;
+    } else if (pointValue === void 0 && isRecord2(value.payload)) {
+      pointValue = value.payload.points;
+    }
+    const points = validateStrokePoints(pointValue);
+    if (!points) return null;
+    return {
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      ...sessionId ? { sessionId } : {},
+      ...canvasId ? { canvasId } : {},
+      points
+    };
+  }
+  var OpenInkBridgeSession = class {
+    constructor(owner, record) {
+      this.owner = owner;
+      this.destroyed = false;
+      this.id = record.id;
+      this.canvasId = record.canvasId;
+    }
+    setWritingMode(enabled, targetElement, options) {
+      this.assertActive();
+      this.owner.configureSession(this.id, enabled, targetElement, options);
+    }
+    onStrokeFinished(callback) {
+      this.assertActive();
+      return this.owner.subscribeToSession(this.id, "finished", callback);
+    }
+    onStrokeStarted(callback) {
+      this.assertActive();
+      return this.owner.subscribeToSession(this.id, "started", callback);
+    }
+    onStrokeUpdated(callback) {
+      this.assertActive();
+      return this.owner.subscribeToSession(this.id, "updated", callback);
+    }
+    onStrokeDrawn() {
+      if (!this.destroyed) this.owner.onStrokeDrawn(this.id);
+    }
+    destroy() {
+      if (this.destroyed) return;
+      this.destroyed = true;
+      this.owner.destroySession(this.id);
+    }
+    assertActive() {
+      if (this.destroyed) throw new Error("OpenInkBridgeSession has been destroyed");
+    }
+  };
+  var OpenInkBridge = class {
+    constructor() {
+      this.sessions = /* @__PURE__ */ new Map();
+      this.strokeCallbacks = /* @__PURE__ */ new Set();
+      this.strokeStartCallbacks = /* @__PURE__ */ new Set();
+      this.strokeUpdateCallbacks = /* @__PURE__ */ new Set();
+      this.nativePayloadHandler = (payload) => this.handleNativePayload(payload);
+      this.activeNativeSessionId = null;
+      this.activationSequence = 0;
+      this.destroyed = false;
+      this.sessions.set(LEGACY_SESSION_ID, this.createSessionRecord(LEGACY_SESSION_ID, LEGACY_SESSION_ID));
+      this.installNativeCallback();
+      logger.info("JsBridge" /* JsBridge */, "Browser", "INITIALIZE", "OpenInkBridge JS SDK initialized");
+    }
+    /** Create an isolated event and fallback-input scope for one canvas. */
+    createSession(canvasId) {
+      this.assertActive();
+      const normalizedCanvasId = sanitizeIdentifier(canvasId) || `canvas-${++sessionSequence}`;
+      const sessionId = `oib-${normalizedCanvasId}-${Date.now().toString(36)}-${++sessionSequence}`;
+      const record = this.createSessionRecord(sessionId, normalizedCanvasId);
+      this.sessions.set(sessionId, record);
+      return new OpenInkBridgeSession(this, record);
+    }
+    /** Check whether a callable native OpenInkBridge interface is present. */
+    isSupported() {
+      const nativeBridge = getNativeBridge();
+      const supported = isDirectNativeBridge(nativeBridge) || isMessageNativeBridge(nativeBridge);
+      logger.debug(
+        "Backend" /* Backend */,
+        supported ? "NativeBridge" : "PointerFallback",
+        "SUPPORTED_CHECK",
+        supported ? "Native OpenInkBridge interface detected" : "Native OpenInkBridge interface not present; using browser fallbacks"
+      );
+      return supported;
+    }
+    /** Backwards-compatible singleton API, scoped internally as the legacy session. */
+    setWritingMode(enabled, targetElement, options) {
+      this.configureSession(LEGACY_SESSION_ID, enabled, targetElement, options);
+    }
+    configureSession(sessionId, enabled, targetElement, options) {
+      this.assertActive();
+      const record = this.requireSession(sessionId);
+      const normalizedOptions = normalizeOptions(options, record.options);
+      record.targetElement = targetElement;
+      record.options = normalizedOptions;
+      record.writingEnabled = enabled;
+      if (this.isSupported()) {
+        this.removeFallbackListeners(record);
+        if (enabled) {
+          record.activationOrder = ++this.activationSequence;
+          this.activeNativeSessionId = record.id;
+          this.invokeNativeWritingMode(record, true);
+        } else if (this.activeNativeSessionId === record.id) {
+          const nextRecord = this.findMostRecentlyActivatedNativeSession(record.id);
+          this.activeNativeSessionId = nextRecord?.id || null;
+          if (nextRecord) {
+            this.invokeNativeWritingMode(nextRecord, true);
+          } else {
+            this.invokeNativeWritingMode(record, false);
+          }
+        }
+        return;
+      }
+      if (enabled) {
+        this.setupFallbackListeners(record, targetElement);
+      } else {
+        this.removeFallbackListeners(record);
+      }
+    }
+    /** Notify native hardware that the corresponding software stroke is committed. */
+    onStrokeDrawn(sessionId = LEGACY_SESSION_ID) {
+      const nativeBridge = getNativeBridge();
+      if (!nativeBridge) return;
+      try {
+        const record = this.sessions.get(sessionId);
+        if (isMessageNativeBridge(nativeBridge) && record) {
+          nativeBridge.postMessage(JSON.stringify({
+            protocolVersion: BRIDGE_PROTOCOL_VERSION,
+            type: "strokeDrawn",
+            sessionId,
+            canvasId: record.canvasId
+          }));
+        } else if (isDirectNativeBridge(nativeBridge) && typeof nativeBridge.onStrokeDrawnForSession === "function") {
+          nativeBridge.onStrokeDrawnForSession(JSON.stringify({
+            protocolVersion: BRIDGE_PROTOCOL_VERSION,
+            type: "strokeDrawn",
+            sessionId,
+            canvasId: record?.canvasId || sessionId
+          }));
+        } else if (isDirectNativeBridge(nativeBridge) && typeof nativeBridge.onStrokeDrawn === "function") {
+          nativeBridge.onStrokeDrawn();
+        }
+      } catch (error) {
+        logger.error(
+          "Synchronization" /* Synchronization */,
+          "NativeBridge",
+          "ON_STROKE_DRAWN_ERROR",
+          `Failed to acknowledge native stroke: ${errorMessage(error)}`
+        );
+      }
+    }
+    /** Global observers are retained for source compatibility and receive every valid stroke. */
+    onStrokeFinished(callback) {
+      return subscribe(this.strokeCallbacks, callback);
+    }
+    onStrokeStarted(callback) {
+      return subscribe(this.strokeStartCallbacks, callback);
+    }
+    onStrokeUpdated(callback) {
+      return subscribe(this.strokeUpdateCallbacks, callback);
+    }
+    subscribeToSession(sessionId, event, callback) {
+      const record = this.requireSession(sessionId);
+      if (event === "finished") {
+        return subscribe(record.strokeCallbacks, callback);
+      }
+      if (event === "started") {
+        return subscribe(record.strokeStartCallbacks, callback);
+      }
+      return subscribe(record.strokeUpdateCallbacks, callback);
+    }
+    destroySession(sessionId) {
+      if (sessionId === LEGACY_SESSION_ID) return;
+      const record = this.sessions.get(sessionId);
+      if (!record) return;
+      if (record.writingEnabled && record.targetElement) {
+        this.configureSession(sessionId, false, record.targetElement, record.options);
+      }
+      this.removeFallbackListeners(record);
+      record.strokeCallbacks.clear();
+      record.strokeStartCallbacks.clear();
+      record.strokeUpdateCallbacks.clear();
+      this.sessions.delete(sessionId);
+    }
+    setLogLevel(level) {
+      logger.setLogLevel(level);
+    }
+    collectDiagnostics() {
+      return collectDiagnostics(void 0, this.isSupported());
+    }
+    dumpConfiguration() {
+      return dumpConfiguration(void 0, this.isSupported());
+    }
+    createBugReport() {
+      return createBugReport(void 0, this.isSupported());
+    }
+    getRingBufferLogs() {
+      return logger.getRingBufferLogs();
+    }
+    /** Primarily useful for isolated runtimes and tests; the exported singleton normally lives for the page. */
+    destroy() {
+      if (this.destroyed) return;
+      if (this.activeNativeSessionId) {
+        const activeRecord = this.sessions.get(this.activeNativeSessionId);
+        if (activeRecord) this.invokeNativeWritingMode(activeRecord, false);
+        this.activeNativeSessionId = null;
+      }
+      for (const record of Array.from(this.sessions.values())) {
+        this.removeFallbackListeners(record);
+      }
+      this.sessions.clear();
+      this.strokeCallbacks.clear();
+      this.strokeStartCallbacks.clear();
+      this.strokeUpdateCallbacks.clear();
+      this.removeNativeCallback();
+      this.destroyed = true;
+    }
+    createSessionRecord(id, canvasId) {
+      return {
+        id,
+        canvasId,
+        strokeCallbacks: /* @__PURE__ */ new Set(),
+        strokeStartCallbacks: /* @__PURE__ */ new Set(),
+        strokeUpdateCallbacks: /* @__PURE__ */ new Set(),
+        writingEnabled: false,
+        activationOrder: 0,
+        targetElement: null,
+        options: {
+          color: "#000000",
+          width: 4,
+          stylusOnly: true
+        },
+        fallbackBinding: null,
+        currentFallbackStroke: [],
+        activePointerId: null
+      };
+    }
+    requireSession(sessionId) {
+      const record = this.sessions.get(sessionId);
+      if (!record) throw new Error(`Unknown OpenInkBridge session: ${sessionId}`);
+      return record;
+    }
+    installNativeCallback() {
+      const bridgeWindow = getBridgeWindow();
+      if (!bridgeWindow) return;
+      let registry = bridgeWindow[CALLBACK_REGISTRY_KEY];
+      if (!registry || registry.protocolVersion !== BRIDGE_PROTOCOL_VERSION) {
+        const previous = typeof bridgeWindow.onOpenInkBridgeStrokeFinished === "function" ? bridgeWindow.onOpenInkBridgeStrokeFinished : void 0;
+        const handlers = /* @__PURE__ */ new Set();
+        registry = {
+          protocolVersion: BRIDGE_PROTOCOL_VERSION,
+          handlers,
+          previous,
+          dispatcher: (payload) => {
+            for (const handler of Array.from(handlers)) handler(payload);
+            if (previous && previous !== registry?.dispatcher) previous(payload);
+          }
+        };
+        bridgeWindow[CALLBACK_REGISTRY_KEY] = registry;
+        bridgeWindow.onOpenInkBridgeStrokeFinished = registry.dispatcher;
+      }
+      registry.handlers.add(this.nativePayloadHandler);
+    }
+    removeNativeCallback() {
+      const bridgeWindow = getBridgeWindow();
+      const registry = bridgeWindow?.[CALLBACK_REGISTRY_KEY];
+      if (!bridgeWindow || !registry) return;
+      registry.handlers.delete(this.nativePayloadHandler);
+      if (registry.handlers.size === 0) {
+        if (bridgeWindow.onOpenInkBridgeStrokeFinished === registry.dispatcher) {
+          bridgeWindow.onOpenInkBridgeStrokeFinished = registry.previous;
+        }
+        delete bridgeWindow[CALLBACK_REGISTRY_KEY];
+      }
+    }
+    handleNativePayload(payload) {
+      const parsed = parseNativeStrokePayload(payload);
+      if (!parsed) {
+        logger.error(
+          "Synchronization" /* Synchronization */,
+          "NativeBridge",
+          "INVALID_STROKE_PAYLOAD",
+          "Rejected malformed or unsupported native stroke payload"
+        );
+        return;
+      }
+      let record;
+      if (parsed.sessionId) record = this.sessions.get(parsed.sessionId);
+      if (!record && parsed.canvasId) {
+        record = Array.from(this.sessions.values()).find((candidate) => candidate.canvasId === parsed.canvasId);
+      }
+      if (!record && !parsed.sessionId && !parsed.canvasId && this.activeNativeSessionId) {
+        record = this.sessions.get(this.activeNativeSessionId);
+      }
+      if (!record && !parsed.sessionId && !parsed.canvasId) record = this.sessions.get(LEGACY_SESSION_ID);
+      if (!record) {
+        logger.warn(
+          "Synchronization" /* Synchronization */,
+          "NativeBridge",
+          "UNKNOWN_SESSION",
+          `Ignoring stroke for unknown session ${parsed.sessionId || parsed.canvasId || "(none)"}`
+        );
+        return;
+      }
+      logger.debug(
+        "Synchronization" /* Synchronization */,
+        "NativeBridge",
+        "STROKE_RECEIVED",
+        `Received finalized stroke with ${parsed.points.length} points for session ${record.id}`
+      );
+      this.notifyFinished(record, parsed.points);
+    }
+    notifyFinished(record, points) {
+      invokeStrokeCallbacks(record.strokeCallbacks, points);
+      if (record.id !== LEGACY_SESSION_ID) invokeStrokeCallbacks(this.strokeCallbacks, points);
+    }
+    notifyStarted(record, point) {
+      invokePointCallbacks(record.strokeStartCallbacks, point);
+      if (record.id !== LEGACY_SESSION_ID) invokePointCallbacks(this.strokeStartCallbacks, point);
+    }
+    notifyUpdated(record, point) {
+      invokePointCallbacks(record.strokeUpdateCallbacks, point);
+      if (record.id !== LEGACY_SESSION_ID) invokePointCallbacks(this.strokeUpdateCallbacks, point);
+    }
+    invokeNativeWritingMode(record, enabled) {
+      const nativeBridge = getNativeBridge();
+      if (!nativeBridge || !record.targetElement) return;
+      const rect = record.targetElement.getBoundingClientRect();
+      const payload = {
+        protocolVersion: BRIDGE_PROTOCOL_VERSION,
+        type: "setWritingMode",
+        sessionId: record.id,
+        canvasId: record.canvasId,
+        enabled,
+        color: record.options.color,
+        width: record.options.width,
+        stylusOnly: record.options.stylusOnly !== false,
+        rect: {
+          left: finiteOrZero(rect.left),
+          top: finiteOrZero(rect.top),
+          width: Math.max(0, finiteOrZero(rect.width)),
+          height: Math.max(0, finiteOrZero(rect.height))
+        }
+      };
+      try {
+        if (isMessageNativeBridge(nativeBridge)) {
+          nativeBridge.postMessage(JSON.stringify(payload));
+        } else {
+          nativeBridge.setWritingMode(enabled, JSON.stringify(payload));
+        }
+        logger.info(
+          "JsBridge" /* JsBridge */,
+          "NativeBridge",
+          "SET_WRITING_MODE",
+          `Native writing mode enabled=${enabled} for session ${record.id}`,
+          payload
+        );
+      } catch (error) {
+        logger.error(
+          "JsBridge" /* JsBridge */,
+          "NativeBridge",
+          "SET_WRITING_MODE_ERROR",
+          `Native bridge rejected writing mode update: ${errorMessage(error)}`
+        );
+      }
+    }
+    findMostRecentlyActivatedNativeSession(excludedId) {
+      return Array.from(this.sessions.values()).filter((record) => record.id !== excludedId && record.writingEnabled && record.targetElement).sort((left, right) => right.activationOrder - left.activationOrder)[0];
+    }
+    setupFallbackListeners(record, element) {
+      if (record.fallbackBinding?.element === element) return;
+      this.removeFallbackListeners(record);
+      const pointerDown = (event) => {
+        if (record.activePointerId !== null) return;
+        if (record.options.stylusOnly && event.pointerType !== "pen") return;
+        event.preventDefault();
+        tryCapturePointer(element, event.pointerId);
+        record.activePointerId = event.pointerId;
+        const point = pointFromEvent(event, element);
+        record.currentFallbackStroke = [point];
+        this.notifyStarted(record, point);
+      };
+      const pointerMove = (event) => {
+        if (record.activePointerId !== event.pointerId) return;
+        event.preventDefault();
+        const point = pointFromEvent(event, element);
+        record.currentFallbackStroke.push(point);
+        this.notifyUpdated(record, point);
+      };
+      const pointerUp = (event) => {
+        if (record.activePointerId !== event.pointerId) return;
+        event.preventDefault();
+        tryReleasePointer(element, event.pointerId);
+        record.activePointerId = null;
+        const points = record.currentFallbackStroke;
+        record.currentFallbackStroke = [];
+        if (points.length > 0) this.notifyFinished(record, points);
+      };
+      const pointerCancel = (event) => {
+        if (record.activePointerId !== event.pointerId) return;
+        tryReleasePointer(element, event.pointerId);
+        record.activePointerId = null;
+        record.currentFallbackStroke = [];
+        logger.warn("PenInput" /* PenInput */, "PointerFallback", "PEN_CANCEL", "Pointer stroke cancelled");
+      };
+      record.fallbackBinding = {
+        element,
+        previousTouchAction: element.style.touchAction,
+        pointerDown,
+        pointerMove,
+        pointerUp,
+        pointerCancel
+      };
+      element.addEventListener("pointerdown", pointerDown, { passive: false });
+      element.addEventListener("pointermove", pointerMove, { passive: false });
+      element.addEventListener("pointerup", pointerUp, { passive: false });
+      element.addEventListener("pointercancel", pointerCancel);
+      element.style.touchAction = "none";
+    }
+    removeFallbackListeners(record) {
+      const binding = record.fallbackBinding;
+      if (!binding) return;
+      binding.element.removeEventListener("pointerdown", binding.pointerDown);
+      binding.element.removeEventListener("pointermove", binding.pointerMove);
+      binding.element.removeEventListener("pointerup", binding.pointerUp);
+      binding.element.removeEventListener("pointercancel", binding.pointerCancel);
+      binding.element.style.touchAction = binding.previousTouchAction;
+      record.fallbackBinding = null;
+      record.currentFallbackStroke = [];
+      record.activePointerId = null;
+    }
+    assertActive() {
+      if (this.destroyed) throw new Error("OpenInkBridge has been destroyed");
+    }
+  };
+  function normalizeOptions(options, previous) {
+    return {
+      color: normalizeStrokeColor(options?.color, previous.color),
+      width: normalizeStrokeWidth(options?.width, previous.width),
+      stylusOnly: options?.stylusOnly ?? previous.stylusOnly ?? true
+    };
+  }
+  function pointFromEvent(event, element) {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: finiteOrZero(event.clientX - rect.left),
+      y: finiteOrZero(event.clientY - rect.top),
+      pressure: Number.isFinite(event.pressure) ? Math.max(0, Math.min(16, event.pressure)) : 0.5,
+      tilt: Number.isFinite(event.tiltX) ? Math.max(-180, Math.min(180, event.tiltX)) : 0,
+      timestamp: Date.now()
+    };
+  }
+  function invokeStrokeCallbacks(callbacks, points) {
+    for (const callback of Array.from(callbacks)) {
+      try {
+        callback(cloneStrokePoints(points));
+      } catch (error) {
+        logger.error(
+          "JsBridge" /* JsBridge */,
+          "Callback",
+          "STROKE_CALLBACK_ERROR",
+          `Stroke callback failed: ${errorMessage(error)}`
+        );
+      }
+    }
+  }
+  function invokePointCallbacks(callbacks, point) {
+    for (const callback of Array.from(callbacks)) {
+      try {
+        callback(cloneStrokePoint(point));
+      } catch (error) {
+        logger.error(
+          "JsBridge" /* JsBridge */,
+          "Callback",
+          "POINT_CALLBACK_ERROR",
+          `Point callback failed: ${errorMessage(error)}`
+        );
+      }
+    }
+  }
+  function subscribe(callbacks, callback) {
+    callbacks.add(callback);
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      callbacks.delete(callback);
+    };
+  }
+  function getBridgeWindow() {
+    return typeof window === "undefined" ? null : window;
+  }
+  function getNativeBridge() {
+    return getBridgeWindow()?.OpenInkBridgeNative;
+  }
+  function isDirectNativeBridge(value) {
+    return typeof value?.setWritingMode === "function";
+  }
+  function isMessageNativeBridge(value) {
+    return typeof value?.postMessage === "function";
+  }
+  function readIdentifier(value) {
+    if (typeof value !== "string") return void 0;
+    const identifier = sanitizeIdentifier(value);
+    return identifier || void 0;
+  }
+  function sanitizeIdentifier(value) {
+    return typeof value === "string" && /^[a-z0-9._:-]{1,128}$/i.test(value) ? value : "";
+  }
+  function isRecord2(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function finiteOrZero(value) {
+    return Number.isFinite(value) ? value : 0;
+  }
+  function tryCapturePointer(element, pointerId) {
+    try {
+      element.setPointerCapture(pointerId);
+    } catch {
+    }
+  }
+  function tryReleasePointer(element, pointerId) {
+    try {
+      element.releasePointerCapture(pointerId);
+    } catch {
+    }
+  }
+  function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  var openInkBridge = new OpenInkBridge();
+
+  // src/wasm.ts
+  var GENERATED_WASM_MODULE_PATH = "./wasm/openinkbridge_core.js";
+  var configuredLoader = null;
+  var bindings = null;
+  var initialization = null;
+  function configureOpenInkBridgeWasmLoader(loader) {
+    configuredLoader = loader;
+    bindings = null;
+    initialization = null;
+  }
+  function initOpenInkBridgeWasm(wasmUrl, loader) {
+    if (bindings) return Promise.resolve(true);
+    if (initialization) return initialization;
+    const selectedLoader = loader || configuredLoader || loadGeneratedBindings;
+    initialization = selectedLoader().then(async (loadedBindings) => {
+      if (!isBindings(loadedBindings)) {
+        throw new TypeError("Generated WASM module does not expose the expected bindings");
+      }
+      await loadedBindings.default(wasmUrl);
+      bindings = loadedBindings;
+      logger.info("Core" /* Core */, "WasmCore", "INITIALIZED", "WebAssembly stroke processing initialized");
+      return true;
+    }).catch((error) => {
+      logger.debug(
+        "Core" /* Core */,
+        "JsCore",
+        "WASM_UNAVAILABLE",
+        `Using JavaScript stroke processing fallback: ${errorMessage2(error)}`
+      );
+      return false;
+    });
+    return initialization;
+  }
+  function smoothStroke(points) {
+    if (!bindings) return smoothStrokeJs(points);
+    try {
+      const output = bindings.smooth_stroke_wasm(JSON.stringify(points));
+      const parsed = validateStrokePoints(JSON.parse(output));
+      if (parsed) return parsed;
+      throw new TypeError("WASM returned an invalid stroke payload");
+    } catch (error) {
+      logger.error(
+        "Core" /* Core */,
+        "WasmCore",
+        "SMOOTHING_ERROR",
+        `WASM smoothing failed; using JavaScript fallback: ${errorMessage2(error)}`
+      );
+      return smoothStrokeJs(points);
+    }
+  }
+  function isOpenInkBridgeWasmInitialized() {
+    return bindings !== null;
+  }
+  async function loadGeneratedBindings() {
+    return import(GENERATED_WASM_MODULE_PATH);
+  }
+  function isBindings(value) {
+    return typeof value === "object" && value !== null && typeof value.default === "function" && typeof value.smooth_stroke_wasm === "function";
+  }
+  function errorMessage2(error) {
+    return error instanceof Error ? error.message : String(error);
   }
 
   // src/canvas.ts
-  var isWasmInitialized = false;
-  var wasmInitPromise = null;
-  async function initOpenInkBridgeWasm(wasmUrl) {
-    if (isWasmInitialized) return;
-    if (!wasmInitPromise) {
-      wasmInitPromise = __wbg_init(wasmUrl).then(() => {
-        isWasmInitialized = true;
-        console.log("OpenInkBridge: WebAssembly core math engine initialized successfully.");
-      }).catch((err) => {
-        console.warn("OpenInkBridge: WebAssembly initialization failed. Drawing will fallback to browser JS math.", err);
-      });
+  var resizeSubscribers = /* @__PURE__ */ new Set();
+  var resizeListenerInstalled = false;
+  var strokeSequence = 0;
+  var canvasSequence = 0;
+  function dispatchResize() {
+    for (const subscriber of Array.from(resizeSubscribers)) subscriber();
+  }
+  function subscribeToWindowResize(subscriber) {
+    if (typeof window === "undefined") return () => {
+    };
+    resizeSubscribers.add(subscriber);
+    if (!resizeListenerInstalled) {
+      window.addEventListener("resize", dispatchResize);
+      resizeListenerInstalled = true;
     }
-    return wasmInitPromise;
+    let subscribed = true;
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      resizeSubscribers.delete(subscriber);
+      if (resizeSubscribers.size === 0 && resizeListenerInstalled) {
+        window.removeEventListener("resize", dispatchResize);
+        resizeListenerInstalled = false;
+      }
+    };
   }
   var OpenInkBridgeCanvas = class {
-    constructor(canvas, options) {
-      this.strokes = [];
+    constructor(canvas, options, bridge = openInkBridge) {
+      this.strokeCallbacks = /* @__PURE__ */ new Set();
+      this.document = {
+        schemaVersion: INK_DOCUMENT_SCHEMA_VERSION,
+        strokes: []
+      };
+      this.committedCanvas = null;
+      this.committedContext = null;
       this.unsubscribeBridge = null;
       this.liveUnsubscribeStart = null;
       this.liveUnsubscribeUpdate = null;
+      this.activeStrokeStyle = null;
       this.isDrawingActive = false;
+      this.destroyed = false;
+      this.cssWidth = 0;
+      this.cssHeight = 0;
+      this.lastLivePoint = null;
       this.canvas = canvas;
+      this.bridge = bridge;
       const context = canvas.getContext("2d");
       if (!context) {
         throw new Error("OpenInkBridgeCanvas: Could not acquire 2D context from canvas element.");
       }
       this.ctx = context;
       this.options = {
-        strokeColor: options?.strokeColor || "#000000",
-        strokeWidth: options?.strokeWidth || 4,
+        strokeColor: normalizeStrokeColor(options?.strokeColor, DEFAULT_STROKE_COLOR),
+        strokeWidth: normalizeStrokeWidth(options?.strokeWidth, DEFAULT_STROKE_WIDTH),
         smoothing: options?.smoothing !== false,
         stylusOnly: options?.stylusOnly !== false
       };
+      const canvasId = canvas.id || `canvas-${++canvasSequence}`;
+      this.session = bridge.createSession(canvasId);
+      this.createCommittedSurface();
       this.setupCanvasQuality();
-      if (typeof window !== "undefined") {
-        window.addEventListener("resize", () => {
-          this.setupCanvasQuality();
-          this.redrawCanvas();
-          if (this.isDrawingActive) {
-            const container = this.canvas.parentElement || this.canvas;
-            openInkBridge.setWritingMode(true, container, {
-              color: this.options.strokeColor,
-              width: this.options.strokeWidth
-            });
-          }
+      this.unsubscribeResize = subscribeToWindowResize(() => this.handleResize());
+      void initOpenInkBridgeWasm();
+    }
+    enableDrawing() {
+      this.assertNotDestroyed();
+      if (this.isDrawingActive) return;
+      this.isDrawingActive = true;
+      this.unsubscribeBridge = this.session.onStrokeFinished((points) => this.commitStroke(points));
+      if (!this.bridge.isSupported()) {
+        this.liveUnsubscribeStart = this.session.onStrokeStarted((point) => {
+          this.activeStrokeStyle = this.currentStyle();
+          this.ctx.strokeStyle = this.activeStrokeStyle.color;
+          this.lastLivePoint = point;
         });
+        this.liveUnsubscribeUpdate = this.session.onStrokeUpdated((point) => this.drawLivePoint(point));
       }
-      initOpenInkBridgeWasm().catch(() => {
-      });
+      this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
+    }
+    disableDrawing() {
+      if (!this.isDrawingActive || this.destroyed) return;
+      this.isDrawingActive = false;
+      this.session.setWritingMode(false, this.drawingTarget(), this.currentStylingOptions());
+      this.unsubscribeInputCallbacks();
+      this.activeStrokeStyle = null;
+      this.lastLivePoint = null;
+      this.restoreCommittedLayer();
+    }
+    /** Release all native, pointer, callback, resize, and backing-surface resources. */
+    destroy() {
+      if (this.destroyed) return;
+      this.disableDrawing();
+      this.unsubscribeResize();
+      this.session.destroy();
+      this.strokeCallbacks.clear();
+      this.committedCanvas = null;
+      this.committedContext = null;
+      this.destroyed = true;
+    }
+    setStyle(color, width, stylusOnly) {
+      this.assertNotDestroyed();
+      this.options.strokeColor = normalizeStrokeColor(color, this.options.strokeColor);
+      this.options.strokeWidth = normalizeStrokeWidth(width, this.options.strokeWidth);
+      if (stylusOnly !== void 0) this.options.stylusOnly = stylusOnly;
+      if (this.isDrawingActive) {
+        this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
+      }
+    }
+    clear() {
+      this.assertNotDestroyed();
+      this.document.strokes = [];
+      this.activeStrokeStyle = null;
+      this.lastLivePoint = null;
+      this.clearContext(this.committedContext);
+      this.clearContext(this.ctx);
+      if (this.bridge.isSupported()) this.session.onStrokeDrawn();
+    }
+    /** Export an immutable snapshot of the styled document model. */
+    getDocument() {
+      return cloneInkDocument(this.document);
+    }
+    /** Backwards-compatible point-only export. Every nested value is defensively copied. */
+    getStrokes() {
+      return this.document.strokes.map((stroke) => cloneStrokePoints(stroke.points));
+    }
+    exportToSvg() {
+      this.assertNotDestroyed();
+      const width = formatSvgNumber(this.cssWidth || this.canvas.clientWidth);
+      const height = formatSvgNumber(this.cssHeight || this.canvas.clientHeight);
+      let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+      for (const stroke of this.document.strokes) {
+        if (stroke.points.length < 2) continue;
+        const path = stroke.points.map((point, index) => `${index === 0 ? "M" : "L"} ${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`).join(" ");
+        const safeColor = escapeXmlAttribute(normalizeStrokeColor(stroke.style.color, DEFAULT_STROKE_COLOR));
+        const safeWidth = formatSvgNumber(normalizeStrokeWidth(stroke.style.width, DEFAULT_STROKE_WIDTH));
+        svg += `<path d="${path}" stroke="${safeColor}" stroke-width="${safeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+      }
+      return `${svg}</svg>`;
+    }
+    /** Listen only to strokes committed by this canvas session. */
+    onStrokeFinished(callback) {
+      this.assertNotDestroyed();
+      this.strokeCallbacks.add(callback);
+      let subscribed = true;
+      return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        this.strokeCallbacks.delete(callback);
+      };
+    }
+    commitStroke(rawPoints) {
+      if (this.destroyed || rawPoints.length === 0) return;
+      const points = this.options.smoothing ? smoothStroke(rawPoints) : cloneStrokePoints(rawPoints);
+      const stroke = {
+        id: `stroke-${Date.now().toString(36)}-${++strokeSequence}`,
+        points: cloneStrokePoints(points),
+        style: this.activeStrokeStyle ? { ...this.activeStrokeStyle } : this.currentStyle()
+      };
+      this.document.strokes.push(stroke);
+      if (this.committedContext) {
+        this.drawStroke(this.committedContext, stroke);
+        this.restoreCommittedLayer();
+      } else {
+        this.redrawCanvas();
+      }
+      this.activeStrokeStyle = null;
+      this.lastLivePoint = null;
+      this.session.onStrokeDrawn();
+      this.notifyStrokeCallbacks(stroke.points);
+    }
+    notifyStrokeCallbacks(points) {
+      for (const callback of Array.from(this.strokeCallbacks)) {
+        try {
+          callback(cloneStrokePoints(points));
+        } catch (error) {
+          logger.error(
+            "JsBridge" /* JsBridge */,
+            "CanvasCallback",
+            "STROKE_CALLBACK_ERROR",
+            `Canvas stroke callback failed: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+    }
+    drawLivePoint(point) {
+      if (this.lastLivePoint) {
+        const style = this.activeStrokeStyle || this.currentStyle();
+        const averagePressure = (this.lastLivePoint.pressure + point.pressure) / 2;
+        this.ctx.strokeStyle = style.color;
+        this.ctx.lineWidth = Math.max(0.5, style.width * averagePressure);
+        this.ctx.lineCap = "round";
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.lastLivePoint.x, this.lastLivePoint.y);
+        this.ctx.lineTo(point.x, point.y);
+        this.ctx.stroke();
+      }
+      this.lastLivePoint = point;
+    }
+    createCommittedSurface() {
+      const ownerDocument = this.canvas.ownerDocument || (typeof document !== "undefined" ? document : null);
+      if (!ownerDocument) return;
+      const committedCanvas = ownerDocument.createElement("canvas");
+      const committedContext = committedCanvas.getContext("2d");
+      if (!committedContext) return;
+      this.committedCanvas = committedCanvas;
+      this.committedContext = committedContext;
     }
     setupCanvasQuality() {
       const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
       const rect = this.canvas.getBoundingClientRect();
-      this.canvas.width = rect.width * dpr;
-      this.canvas.height = rect.height * dpr;
-      this.ctx.scale(dpr, dpr);
-      this.ctx.lineCap = "round";
-      this.ctx.lineJoin = "round";
-    }
-    /**
-     * Enable E-Ink drawing mode. Hands over input rendering to the EPD overlay
-     * if supported, otherwise configures local browser pointer capture fallback.
-     */
-    enableDrawing() {
-      if (this.isDrawingActive) return;
-      this.isDrawingActive = true;
-      const container = this.canvas.parentElement || this.canvas;
-      openInkBridge.setWritingMode(true, container, {
-        color: this.options.strokeColor,
-        width: this.options.strokeWidth,
-        stylusOnly: this.options.stylusOnly
-      });
-      this.unsubscribeBridge = openInkBridge.onStrokeFinished((points) => {
-        const processedPoints = this.options.smoothing ? this.smoothPoints(points) : points;
-        this.strokes.push(processedPoints);
-        this.redrawCanvas();
-        openInkBridge.onStrokeDrawn();
-      });
-      if (!openInkBridge.isSupported()) {
-        let lastPoint = null;
-        this.liveUnsubscribeStart = openInkBridge.onStrokeStarted((point) => {
-          this.ctx.strokeStyle = this.options.strokeColor;
-          lastPoint = point;
-        });
-        this.liveUnsubscribeUpdate = openInkBridge.onStrokeUpdated((point) => {
-          if (lastPoint) {
-            const avgPressure = (lastPoint.pressure + point.pressure) / 2;
-            const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
-            this.ctx.lineWidth = width;
-            this.ctx.beginPath();
-            this.ctx.moveTo(lastPoint.x, lastPoint.y);
-            this.ctx.lineTo(point.x, point.y);
-            this.ctx.stroke();
-          }
-          lastPoint = point;
-        });
+      this.cssWidth = Math.max(0, Number.isFinite(rect.width) ? rect.width : 0);
+      this.cssHeight = Math.max(0, Number.isFinite(rect.height) ? rect.height : 0);
+      const physicalWidth = Math.max(0, Math.round(this.cssWidth * dpr));
+      const physicalHeight = Math.max(0, Math.round(this.cssHeight * dpr));
+      this.configureSurface(this.canvas, this.ctx, physicalWidth, physicalHeight, dpr);
+      if (this.committedCanvas && this.committedContext) {
+        this.configureSurface(this.committedCanvas, this.committedContext, physicalWidth, physicalHeight, dpr);
       }
     }
-    /**
-     * Disable E-Ink drawing mode, releasing overlays and listeners.
-     */
-    disableDrawing() {
-      if (!this.isDrawingActive) return;
-      this.isDrawingActive = false;
-      const container = this.canvas.parentElement || this.canvas;
-      openInkBridge.setWritingMode(false, container);
-      if (this.unsubscribeBridge) {
-        this.unsubscribeBridge();
-        this.unsubscribeBridge = null;
-      }
-      if (this.liveUnsubscribeStart) {
-        this.liveUnsubscribeStart();
-        this.liveUnsubscribeStart = null;
-      }
-      if (this.liveUnsubscribeUpdate) {
-        this.liveUnsubscribeUpdate();
-        this.liveUnsubscribeUpdate = null;
-      }
+    configureSurface(canvas, context, physicalWidth, physicalHeight, dpr) {
+      canvas.width = physicalWidth;
+      canvas.height = physicalHeight;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0);
+      context.lineCap = "round";
+      context.lineJoin = "round";
     }
-    /**
-     * Redraws all completed strokes onto the canvas element.
-     */
-    redrawCanvas() {
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      for (const stroke of this.strokes) {
-        this.drawStroke(stroke);
-      }
-    }
-    setStyle(color, width, stylusOnly) {
-      this.options.strokeColor = color;
-      this.options.strokeWidth = width;
-      if (stylusOnly !== void 0) {
-        this.options.stylusOnly = stylusOnly;
-      }
+    handleResize() {
+      if (this.destroyed) return;
+      this.setupCanvasQuality();
+      this.redrawCanvas();
       if (this.isDrawingActive) {
-        const container = this.canvas.parentElement || this.canvas;
-        openInkBridge.setWritingMode(true, container, {
-          color,
-          width,
-          stylusOnly: this.options.stylusOnly
-        });
+        this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
       }
     }
-    /**
-     * Clear the canvas and internal vector database.
-     */
-    clear() {
-      this.strokes = [];
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      if (openInkBridge.isSupported()) {
-        const container = this.canvas.parentElement || this.canvas;
-        const rect = container.getBoundingClientRect();
-        window.OpenInkBridgeNative.setWritingMode(this.isDrawingActive, JSON.stringify({
-          color: this.options.strokeColor,
-          width: this.options.strokeWidth,
-          stylusOnly: this.options.stylusOnly,
-          rect: {
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
-            height: rect.height
-          }
-        }));
+    redrawCanvas() {
+      this.clearContext(this.committedContext);
+      if (this.committedContext) {
+        for (const stroke of this.document.strokes) this.drawStroke(this.committedContext, stroke);
+        this.restoreCommittedLayer();
+        return;
       }
+      this.clearContext(this.ctx);
+      for (const stroke of this.document.strokes) this.drawStroke(this.ctx, stroke);
     }
-    /**
-     * Export the vector canvas contents directly to an SVG string.
-     */
-    exportToSvg() {
-      const width = this.canvas.clientWidth;
-      const height = this.canvas.clientHeight;
-      let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
-      for (const stroke of this.strokes) {
-        if (stroke.length < 2) continue;
-        svg += `<path d="M ${stroke[0].x} ${stroke[0].y}`;
-        for (let i = 1; i < stroke.length; i++) {
-          svg += ` L ${stroke[i].x} ${stroke[i].y}`;
-        }
-        svg += `" stroke="${this.options.strokeColor}" stroke-width="${this.options.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
-      }
-      svg += "</svg>";
-      return svg;
+    restoreCommittedLayer() {
+      this.clearContext(this.ctx);
+      if (!this.committedCanvas || this.cssWidth === 0 || this.cssHeight === 0) return;
+      this.ctx.drawImage(this.committedCanvas, 0, 0, this.cssWidth, this.cssHeight);
     }
-    /**
-     * Export vector strokes.
-     */
-    getStrokes() {
-      return this.strokes;
+    clearContext(context) {
+      if (!context) return;
+      context.clearRect(0, 0, this.cssWidth, this.cssHeight);
     }
-    /**
-     * Listen to finished strokes.
-     */
-    onStrokeFinished(callback) {
-      return openInkBridge.onStrokeFinished(callback);
-    }
-    drawStroke(points) {
+    drawStroke(context, stroke) {
+      const { points, style } = stroke;
       if (points.length < 2) return;
-      this.ctx.strokeStyle = this.options.strokeColor;
+      context.strokeStyle = style.color;
       const totalSegments = points.length - 1;
-      for (let i = 0; i < totalSegments; i++) {
-        const p1 = points[i];
-        const p2 = points[i + 1];
-        const avgPressure = (p1.pressure + p2.pressure) / 2;
-        const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
-        this.ctx.lineWidth = width;
-        this.ctx.lineCap = totalSegments === 1 || i === 0 || i === totalSegments - 1 ? "round" : "butt";
-        this.ctx.beginPath();
-        this.ctx.moveTo(p1.x, p1.y);
-        this.ctx.lineTo(p2.x, p2.y);
-        this.ctx.stroke();
+      for (let index = 0; index < totalSegments; index++) {
+        const first = points[index];
+        const second = points[index + 1];
+        const averagePressure = (first.pressure + second.pressure) / 2;
+        context.lineWidth = Math.max(0.5, style.width * averagePressure);
+        context.lineCap = totalSegments === 1 || index === 0 || index === totalSegments - 1 ? "round" : "butt";
+        context.beginPath();
+        context.moveTo(first.x, first.y);
+        context.lineTo(second.x, second.y);
+        context.stroke();
       }
     }
-    smoothPoints(points) {
-      if (points.length < 3) return points;
-      if (isWasmInitialized) {
-        try {
-          const jsonInput = JSON.stringify(points);
-          const jsonOutput = smooth_stroke_wasm(jsonInput);
-          return JSON.parse(jsonOutput);
-        } catch (e) {
-          console.error("OpenInkBridge: WASM stroke smoothing failed; falling back to JS", e);
-        }
-      }
-      const smoothed = [points[0]];
-      for (let i = 1; i < points.length - 1; i++) {
-        smoothed.push({
-          x: (points[i - 1].x + points[i].x + points[i + 1].x) / 3,
-          y: (points[i - 1].y + points[i].y + points[i + 1].y) / 3,
-          pressure: (points[i - 1].pressure + points[i].pressure + points[i + 1].pressure) / 3,
-          tilt: (points[i - 1].tilt + points[i].tilt + points[i + 1].tilt) / 3,
-          timestamp: points[i].timestamp
-        });
-      }
-      smoothed.push(points[points.length - 1]);
-      return smoothed;
+    unsubscribeInputCallbacks() {
+      this.unsubscribeBridge?.();
+      this.liveUnsubscribeStart?.();
+      this.liveUnsubscribeUpdate?.();
+      this.unsubscribeBridge = null;
+      this.liveUnsubscribeStart = null;
+      this.liveUnsubscribeUpdate = null;
+    }
+    currentStyle() {
+      return {
+        color: this.options.strokeColor,
+        width: this.options.strokeWidth
+      };
+    }
+    currentStylingOptions() {
+      return {
+        ...this.currentStyle(),
+        stylusOnly: this.options.stylusOnly
+      };
+    }
+    drawingTarget() {
+      return this.canvas.parentElement || this.canvas;
+    }
+    assertNotDestroyed() {
+      if (this.destroyed) throw new Error("OpenInkBridgeCanvas has been destroyed");
     }
   };
   return __toCommonJS(global_exports);

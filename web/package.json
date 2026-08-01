@@ -16,6 +16,8 @@
     "build:artifacts": "node scripts/generate-version.mjs && tsc && esbuild src/global.ts --bundle --format=iife --global-name=OpenInkBridge --outfile=dist/index.global.js",
     "build": "npm run clean && npm run build:artifacts",
     "build:wasm": "npm run clean && node scripts/build-wasm.mjs && npm run build:artifacts",
+    "sync:android-sample": "node scripts/sync-android-sample.mjs",
+    "check:android-sample": "node scripts/sync-android-sample.mjs --check",
     "test": "npm run build && node --test --test-isolation=none test/web.test.cjs",
     "test:unit": "node --test --test-isolation=none test/web.test.cjs",
     "prepack": "npm run build"

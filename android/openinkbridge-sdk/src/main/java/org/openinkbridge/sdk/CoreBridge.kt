@@ -71,7 +71,7 @@ object CoreBridge {
             )
         }
 
-        return smoothPointsFallback(points)
+        return StrokeSmoother.smooth(points)
     }
 
     fun setNativeLogLevel(level: LogLevel) {
@@ -134,26 +134,5 @@ object CoreBridge {
         return list
     }
 
-    private fun smoothPointsFallback(points: List<PenPoint>): List<PenPoint> {
-        val smoothed = mutableListOf<PenPoint>()
-        smoothed.add(points[0])
-
-        for (i in 1 until points.size - 1) {
-            val prev = points[i - 1]
-            val curr = points[i]
-            val next = points[i + 1]
-            smoothed.add(
-                PenPoint(
-                    x = (prev.x + curr.x + next.x) / 3f,
-                    y = (prev.y + curr.y + next.y) / 3f,
-                    pressure = (prev.pressure + curr.pressure + next.pressure) / 3f,
-                    tilt = (prev.tilt + curr.tilt + next.tilt) / 3f,
-                    timestamp = curr.timestamp
-                )
-            )
-        }
-        smoothed.add(points.last())
-        return smoothed
-    }
 }
 
