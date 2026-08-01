@@ -1,24 +1,41 @@
-import { openInkBridge, StrokePoint, StylingOptions } from './bridge';
-import init, { smooth_stroke_wasm } from './wasm/openinkbridge_core';
+import {
+    OpenInkBridge,
+    OpenInkBridgeSession,
+    openInkBridge,
+    StrokeCallback
+} from './bridge';
+import {
+    cloneInkDocument,
+    cloneStrokePoints,
+    DEFAULT_STROKE_COLOR,
+    DEFAULT_STROKE_WIDTH,
+    escapeXmlAttribute,
+    formatSvgNumber,
+    InkDocument,
+    InkStroke,
+    INK_DOCUMENT_SCHEMA_VERSION,
+    normalizeStrokeColor,
+    normalizeStrokeWidth,
+    StrokePoint,
+    StrokeStyle
+} from './model';
+import {
+    configureOpenInkBridgeWasmLoader,
+    initOpenInkBridgeWasm,
+    isOpenInkBridgeWasmInitialized,
+    OpenInkBridgeWasmBindings,
+    OpenInkBridgeWasmLoader,
+    smoothStroke
+} from './wasm';
+import { logger, Subsystem } from './logger';
 
-let isWasmInitialized = false;
-let wasmInitPromise: Promise<void> | null = null;
-
-/**
- * Dynamically loads and initializes the compiled Rust core math engine WebAssembly module.
- */
-export async function initOpenInkBridgeWasm(wasmUrl?: string | URL): Promise<void> {
-    if (isWasmInitialized) return;
-    if (!wasmInitPromise) {
-        wasmInitPromise = init(wasmUrl).then(() => {
-            isWasmInitialized = true;
-            console.log("OpenInkBridge: WebAssembly core math engine initialized successfully.");
-        }).catch((err) => {
-            console.warn("OpenInkBridge: WebAssembly initialization failed. Drawing will fallback to browser JS math.", err);
-        });
-    }
-    return wasmInitPromise;
-}
+export {
+    configureOpenInkBridgeWasmLoader,
+    initOpenInkBridgeWasm,
+    isOpenInkBridgeWasmInitialized,
+    OpenInkBridgeWasmBindings,
+    OpenInkBridgeWasmLoader
+} from './wasm';
 
 export interface CanvasOptions {
     strokeColor?: string;
@@ -27,276 +44,369 @@ export interface CanvasOptions {
     stylusOnly?: boolean;
 }
 
+interface ResolvedCanvasOptions {
+    strokeColor: string;
+    strokeWidth: number;
+    smoothing: boolean;
+    stylusOnly: boolean;
+}
+
+const resizeSubscribers = new Set<() => void>();
+let resizeListenerInstalled = false;
+let strokeSequence = 0;
+let canvasSequence = 0;
+
+function dispatchResize(): void {
+    for (const subscriber of Array.from(resizeSubscribers)) subscriber();
+}
+
+function subscribeToWindowResize(subscriber: () => void): () => void {
+    if (typeof window === 'undefined') return () => {};
+
+    resizeSubscribers.add(subscriber);
+    if (!resizeListenerInstalled) {
+        window.addEventListener('resize', dispatchResize);
+        resizeListenerInstalled = true;
+    }
+
+    let subscribed = true;
+    return () => {
+        if (!subscribed) return;
+        subscribed = false;
+        resizeSubscribers.delete(subscriber);
+        if (resizeSubscribers.size === 0 && resizeListenerInstalled) {
+            window.removeEventListener('resize', dispatchResize);
+            resizeListenerInstalled = false;
+        }
+    };
+}
+
 export class OpenInkBridgeCanvas {
-    private canvas: HTMLCanvasElement;
-    private ctx: CanvasRenderingContext2D;
-    private options: Required<CanvasOptions>;
-    private strokes: StrokePoint[][] = [];
+    private readonly canvas: HTMLCanvasElement;
+    private readonly ctx: CanvasRenderingContext2D;
+    private readonly bridge: OpenInkBridge;
+    private readonly session: OpenInkBridgeSession;
+    private readonly strokeCallbacks = new Set<StrokeCallback>();
+    private readonly unsubscribeResize: () => void;
+    private options: ResolvedCanvasOptions;
+    private document: InkDocument = {
+        schemaVersion: INK_DOCUMENT_SCHEMA_VERSION,
+        strokes: []
+    };
+    private committedCanvas: HTMLCanvasElement | null = null;
+    private committedContext: CanvasRenderingContext2D | null = null;
     private unsubscribeBridge: (() => void) | null = null;
     private liveUnsubscribeStart: (() => void) | null = null;
     private liveUnsubscribeUpdate: (() => void) | null = null;
+    private activeStrokeStyle: StrokeStyle | null = null;
     private isDrawingActive = false;
+    private destroyed = false;
+    private cssWidth = 0;
+    private cssHeight = 0;
 
-    constructor(canvas: HTMLCanvasElement, options?: CanvasOptions) {
+    constructor(canvas: HTMLCanvasElement, options?: CanvasOptions, bridge: OpenInkBridge = openInkBridge) {
         this.canvas = canvas;
+        this.bridge = bridge;
         const context = canvas.getContext('2d');
         if (!context) {
-            throw new Error("OpenInkBridgeCanvas: Could not acquire 2D context from canvas element.");
+            throw new Error('OpenInkBridgeCanvas: Could not acquire 2D context from canvas element.');
         }
         this.ctx = context;
-
         this.options = {
-            strokeColor: options?.strokeColor || "#000000",
-            strokeWidth: options?.strokeWidth || 4,
+            strokeColor: normalizeStrokeColor(options?.strokeColor, DEFAULT_STROKE_COLOR),
+            strokeWidth: normalizeStrokeWidth(options?.strokeWidth, DEFAULT_STROKE_WIDTH),
             smoothing: options?.smoothing !== false,
             stylusOnly: options?.stylusOnly !== false
         };
 
+        const canvasId = canvas.id || `canvas-${++canvasSequence}`;
+        this.session = bridge.createSession(canvasId);
+        this.createCommittedSurface();
         this.setupCanvasQuality();
-        
-        if (typeof window !== 'undefined') {
-            window.addEventListener('resize', () => {
-                this.setupCanvasQuality();
-                this.redrawCanvas();
-                
-                if (this.isDrawingActive) {
-                    const container = this.canvas.parentElement || this.canvas;
-                    openInkBridge.setWritingMode(true, container, {
-                        color: this.options.strokeColor,
-                        width: this.options.strokeWidth
-                    });
-                }
-            });
-        }
-        
-        // Trigger background WebAssembly module loading
-        initOpenInkBridgeWasm().catch(() => {});
+        this.unsubscribeResize = subscribeToWindowResize(() => this.handleResize());
+
+        // Generated WASM is optional; the promise resolves false on a clean checkout.
+        void initOpenInkBridgeWasm();
     }
 
-    private setupCanvasQuality() {
-        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-        const rect = this.canvas.getBoundingClientRect();
-        
-        // Always configure high-DPI scaling matching element's bounding rect
-        this.canvas.width = rect.width * dpr;
-        this.canvas.height = rect.height * dpr;
-        this.ctx.scale(dpr, dpr);
-
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-    }
-
-    /**
-     * Enable E-Ink drawing mode. Hands over input rendering to the EPD overlay
-     * if supported, otherwise configures local browser pointer capture fallback.
-     */
-    public enableDrawing() {
+    public enableDrawing(): void {
+        this.assertNotDestroyed();
         if (this.isDrawingActive) return;
         this.isDrawingActive = true;
 
-        const container = this.canvas.parentElement || this.canvas;
-        
-        // 1. Tell bridge to activate E-Ink overlay (or fallback pointer listeners)
-        openInkBridge.setWritingMode(true, container, {
-            color: this.options.strokeColor,
-            width: this.options.strokeWidth,
-            stylusOnly: this.options.stylusOnly
-        });
-
-        // 2. Subscribe to stroke completion events
-        this.unsubscribeBridge = openInkBridge.onStrokeFinished((points) => {
-            const processedPoints = this.options.smoothing ? this.smoothPoints(points) : points;
-            this.strokes.push(processedPoints);
-            // Redraw all completed strokes to snap raw preview strokes to the finalized smoothed vector paths
-            this.redrawCanvas();
-            openInkBridge.onStrokeDrawn();
-        });
-
-        // 3. Subscribe to live draw updates in fallback mode
-        if (!openInkBridge.isSupported()) {
-            let lastPoint: StrokePoint | null = null;
-            this.liveUnsubscribeStart = openInkBridge.onStrokeStarted((point) => {
-                this.ctx.strokeStyle = this.options.strokeColor;
-                lastPoint = point;
+        this.unsubscribeBridge = this.session.onStrokeFinished(points => this.commitStroke(points));
+        if (!this.bridge.isSupported()) {
+            this.liveUnsubscribeStart = this.session.onStrokeStarted(point => {
+                this.activeStrokeStyle = this.currentStyle();
+                this.ctx.strokeStyle = this.activeStrokeStyle.color;
+                this.lastLivePoint = point;
             });
-
-            this.liveUnsubscribeUpdate = openInkBridge.onStrokeUpdated((point) => {
-                if (lastPoint) {
-                    const avgPressure = (lastPoint.pressure + point.pressure) / 2;
-                    const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
-                    this.ctx.lineWidth = width;
-                    this.ctx.beginPath();
-                    this.ctx.moveTo(lastPoint.x, lastPoint.y);
-                    this.ctx.lineTo(point.x, point.y);
-                    this.ctx.stroke();
-                }
-                lastPoint = point;
-            });
+            this.liveUnsubscribeUpdate = this.session.onStrokeUpdated(point => this.drawLivePoint(point));
         }
+
+        this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
     }
 
-    /**
-     * Disable E-Ink drawing mode, releasing overlays and listeners.
-     */
-    public disableDrawing() {
-        if (!this.isDrawingActive) return;
+    public disableDrawing(): void {
+        if (!this.isDrawingActive || this.destroyed) return;
         this.isDrawingActive = false;
-
-        const container = this.canvas.parentElement || this.canvas;
-        openInkBridge.setWritingMode(false, container);
-
-        if (this.unsubscribeBridge) {
-            this.unsubscribeBridge();
-            this.unsubscribeBridge = null;
-        }
-
-        if (this.liveUnsubscribeStart) {
-            this.liveUnsubscribeStart();
-            this.liveUnsubscribeStart = null;
-        }
-
-        if (this.liveUnsubscribeUpdate) {
-            this.liveUnsubscribeUpdate();
-            this.liveUnsubscribeUpdate = null;
-        }
+        this.session.setWritingMode(false, this.drawingTarget(), this.currentStylingOptions());
+        this.unsubscribeInputCallbacks();
+        this.activeStrokeStyle = null;
+        this.lastLivePoint = null;
+        this.restoreCommittedLayer();
     }
 
-    /**
-     * Redraws all completed strokes onto the canvas element.
-     */
-    private redrawCanvas() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        for (const stroke of this.strokes) {
-            this.drawStroke(stroke);
-        }
+    /** Release all native, pointer, callback, resize, and backing-surface resources. */
+    public destroy(): void {
+        if (this.destroyed) return;
+        this.disableDrawing();
+        this.unsubscribeResize();
+        this.session.destroy();
+        this.strokeCallbacks.clear();
+        this.committedCanvas = null;
+        this.committedContext = null;
+        this.destroyed = true;
     }
 
-    public setStyle(color: string, width: number, stylusOnly?: boolean) {
-        this.options.strokeColor = color;
-        this.options.strokeWidth = width;
-        if (stylusOnly !== undefined) {
-            this.options.stylusOnly = stylusOnly;
-        }
-        
+    public setStyle(color: string, width: number, stylusOnly?: boolean): void {
+        this.assertNotDestroyed();
+        this.options.strokeColor = normalizeStrokeColor(color, this.options.strokeColor);
+        this.options.strokeWidth = normalizeStrokeWidth(width, this.options.strokeWidth);
+        if (stylusOnly !== undefined) this.options.stylusOnly = stylusOnly;
+
         if (this.isDrawingActive) {
-            // Update overlay config
-            const container = this.canvas.parentElement || this.canvas;
-            openInkBridge.setWritingMode(true, container, { 
-                color, 
-                width, 
-                stylusOnly: this.options.stylusOnly 
-            });
+            this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
         }
     }
 
-    /**
-     * Clear the canvas and internal vector database.
-     */
-    public clear() {
-        this.strokes = [];
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        
-        // Also clear native hardware E-Ink layer if present
-        if (openInkBridge.isSupported()) {
-            const container = this.canvas.parentElement || this.canvas;
-            const rect = container.getBoundingClientRect();
-            
-            (window as any).OpenInkBridgeNative.setWritingMode(this.isDrawingActive, JSON.stringify({
-                color: this.options.strokeColor,
-                width: this.options.strokeWidth,
-                stylusOnly: this.options.stylusOnly,
-                rect: {
-                    left: rect.left,
-                    top: rect.top,
-                    width: rect.width,
-                    height: rect.height
-                }
-            }));
-        }
+    public clear(): void {
+        this.assertNotDestroyed();
+        this.document.strokes = [];
+        this.activeStrokeStyle = null;
+        this.lastLivePoint = null;
+        this.clearContext(this.committedContext);
+        this.clearContext(this.ctx);
+
+        // The legacy native implementation uses this acknowledgement to clear its hardware layer.
+        if (this.bridge.isSupported()) this.session.onStrokeDrawn();
     }
 
-    /**
-     * Export the vector canvas contents directly to an SVG string.
-     */
+    /** Export an immutable snapshot of the styled document model. */
+    public getDocument(): InkDocument {
+        return cloneInkDocument(this.document);
+    }
+
+    /** Backwards-compatible point-only export. Every nested value is defensively copied. */
+    public getStrokes(): StrokePoint[][] {
+        return this.document.strokes.map(stroke => cloneStrokePoints(stroke.points));
+    }
+
     public exportToSvg(): string {
-        const width = this.canvas.clientWidth;
-        const height = this.canvas.clientHeight;
+        this.assertNotDestroyed();
+        const width = formatSvgNumber(this.cssWidth || this.canvas.clientWidth);
+        const height = formatSvgNumber(this.cssHeight || this.canvas.clientHeight);
         let svg = `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
 
-        for (const stroke of this.strokes) {
-            if (stroke.length < 2) continue;
-            svg += `<path d="M ${stroke[0].x} ${stroke[0].y}`;
-            for (let i = 1; i < stroke.length; i++) {
-                svg += ` L ${stroke[i].x} ${stroke[i].y}`;
-            }
-            svg += `" stroke="${this.options.strokeColor}" stroke-width="${this.options.strokeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
+        for (const stroke of this.document.strokes) {
+            if (stroke.points.length < 2) continue;
+            const path = stroke.points
+                .map((point, index) => `${index === 0 ? 'M' : 'L'} ${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`)
+                .join(' ');
+            const safeColor = escapeXmlAttribute(normalizeStrokeColor(stroke.style.color, DEFAULT_STROKE_COLOR));
+            const safeWidth = formatSvgNumber(normalizeStrokeWidth(stroke.style.width, DEFAULT_STROKE_WIDTH));
+            svg += `<path d="${path}" stroke="${safeColor}" stroke-width="${safeWidth}" fill="none" stroke-linecap="round" stroke-linejoin="round" />`;
         }
 
-        svg += '</svg>';
-        return svg;
+        return `${svg}</svg>`;
     }
 
-    /**
-     * Export vector strokes.
-     */
-    public getStrokes(): StrokePoint[][] {
-        return this.strokes;
+    /** Listen only to strokes committed by this canvas session. */
+    public onStrokeFinished(callback: StrokeCallback): () => void {
+        this.assertNotDestroyed();
+        this.strokeCallbacks.add(callback);
+        let subscribed = true;
+        return () => {
+            if (!subscribed) return;
+            subscribed = false;
+            this.strokeCallbacks.delete(callback);
+        };
     }
 
-    /**
-     * Listen to finished strokes.
-     */
-    public onStrokeFinished(callback: (stroke: StrokePoint[]) => void): () => void {
-        return openInkBridge.onStrokeFinished(callback);
+    private lastLivePoint: StrokePoint | null = null;
+
+    private commitStroke(rawPoints: StrokePoint[]): void {
+        if (this.destroyed || rawPoints.length === 0) return;
+
+        const points = this.options.smoothing ? smoothStroke(rawPoints) : cloneStrokePoints(rawPoints);
+        const stroke: InkStroke = {
+            id: `stroke-${Date.now().toString(36)}-${++strokeSequence}`,
+            points: cloneStrokePoints(points),
+            style: this.activeStrokeStyle ? { ...this.activeStrokeStyle } : this.currentStyle()
+        };
+        this.document.strokes.push(stroke);
+
+        if (this.committedContext) {
+            this.drawStroke(this.committedContext, stroke);
+            this.restoreCommittedLayer();
+        } else {
+            this.redrawCanvas();
+        }
+
+        this.activeStrokeStyle = null;
+        this.lastLivePoint = null;
+        this.session.onStrokeDrawn();
+        this.notifyStrokeCallbacks(stroke.points);
     }
 
-    private drawStroke(points: StrokePoint[]) {
-        if (points.length < 2) return;
+    private notifyStrokeCallbacks(points: readonly StrokePoint[]): void {
+        for (const callback of Array.from(this.strokeCallbacks)) {
+            try {
+                callback(cloneStrokePoints(points));
+            } catch (error) {
+                logger.error(
+                    Subsystem.JsBridge,
+                    'CanvasCallback',
+                    'STROKE_CALLBACK_ERROR',
+                    `Canvas stroke callback failed: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
+        }
+    }
 
-        this.ctx.strokeStyle = this.options.strokeColor;
-        const totalSegments = points.length - 1;
-        
-        for (let i = 0; i < totalSegments; i++) {
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            
-            const avgPressure = (p1.pressure + p2.pressure) / 2;
-            const width = Math.max(0.5, this.options.strokeWidth * avgPressure);
-            
-            this.ctx.lineWidth = width;
-            this.ctx.lineCap = (totalSegments === 1 || i === 0 || i === totalSegments - 1) ? 'round' : 'butt';
+    private drawLivePoint(point: StrokePoint): void {
+        if (this.lastLivePoint) {
+            const style = this.activeStrokeStyle || this.currentStyle();
+            const averagePressure = (this.lastLivePoint.pressure + point.pressure) / 2;
+            this.ctx.strokeStyle = style.color;
+            this.ctx.lineWidth = Math.max(0.5, style.width * averagePressure);
+            this.ctx.lineCap = 'round';
             this.ctx.beginPath();
-            this.ctx.moveTo(p1.x, p1.y);
-            this.ctx.lineTo(p2.x, p2.y);
+            this.ctx.moveTo(this.lastLivePoint.x, this.lastLivePoint.y);
+            this.ctx.lineTo(point.x, point.y);
             this.ctx.stroke();
         }
+        this.lastLivePoint = point;
     }
 
-    private smoothPoints(points: StrokePoint[]): StrokePoint[] {
-        if (points.length < 3) return points;
+    private createCommittedSurface(): void {
+        const ownerDocument = this.canvas.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (!ownerDocument) return;
 
-        if (isWasmInitialized) {
-            try {
-                const jsonInput = JSON.stringify(points);
-                const jsonOutput = smooth_stroke_wasm(jsonInput);
-                return JSON.parse(jsonOutput);
-            } catch (e) {
-                console.error("OpenInkBridge: WASM stroke smoothing failed; falling back to JS", e);
-            }
+        const committedCanvas = ownerDocument.createElement('canvas');
+        const committedContext = committedCanvas.getContext('2d');
+        if (!committedContext) return;
+        this.committedCanvas = committedCanvas;
+        this.committedContext = committedContext;
+    }
+
+    private setupCanvasQuality(): void {
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        const rect = this.canvas.getBoundingClientRect();
+        this.cssWidth = Math.max(0, Number.isFinite(rect.width) ? rect.width : 0);
+        this.cssHeight = Math.max(0, Number.isFinite(rect.height) ? rect.height : 0);
+        const physicalWidth = Math.max(0, Math.round(this.cssWidth * dpr));
+        const physicalHeight = Math.max(0, Math.round(this.cssHeight * dpr));
+
+        this.configureSurface(this.canvas, this.ctx, physicalWidth, physicalHeight, dpr);
+        if (this.committedCanvas && this.committedContext) {
+            this.configureSurface(this.committedCanvas, this.committedContext, physicalWidth, physicalHeight, dpr);
+        }
+    }
+
+    private configureSurface(
+        canvas: HTMLCanvasElement,
+        context: CanvasRenderingContext2D,
+        physicalWidth: number,
+        physicalHeight: number,
+        dpr: number
+    ): void {
+        canvas.width = physicalWidth;
+        canvas.height = physicalHeight;
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+    }
+
+    private handleResize(): void {
+        if (this.destroyed) return;
+        this.setupCanvasQuality();
+        this.redrawCanvas();
+        if (this.isDrawingActive) {
+            this.session.setWritingMode(true, this.drawingTarget(), this.currentStylingOptions());
+        }
+    }
+
+    private redrawCanvas(): void {
+        this.clearContext(this.committedContext);
+        if (this.committedContext) {
+            for (const stroke of this.document.strokes) this.drawStroke(this.committedContext, stroke);
+            this.restoreCommittedLayer();
+            return;
         }
 
-        // Standard JS double-exponential/moving-average math fallback
-        const smoothed: StrokePoint[] = [points[0]];
-        for (let i = 1; i < points.length - 1; i++) {
-            smoothed.push({
-                x: (points[i-1].x + points[i].x + points[i+1].x) / 3,
-                y: (points[i-1].y + points[i].y + points[i+1].y) / 3,
-                pressure: (points[i-1].pressure + points[i].pressure + points[i+1].pressure) / 3,
-                tilt: (points[i-1].tilt + points[i].tilt + points[i+1].tilt) / 3,
-                timestamp: points[i].timestamp
-            });
+        this.clearContext(this.ctx);
+        for (const stroke of this.document.strokes) this.drawStroke(this.ctx, stroke);
+    }
+
+    private restoreCommittedLayer(): void {
+        this.clearContext(this.ctx);
+        if (!this.committedCanvas || this.cssWidth === 0 || this.cssHeight === 0) return;
+        this.ctx.drawImage(this.committedCanvas, 0, 0, this.cssWidth, this.cssHeight);
+    }
+
+    private clearContext(context: CanvasRenderingContext2D | null): void {
+        if (!context) return;
+        context.clearRect(0, 0, this.cssWidth, this.cssHeight);
+    }
+
+    private drawStroke(context: CanvasRenderingContext2D, stroke: InkStroke): void {
+        const { points, style } = stroke;
+        if (points.length < 2) return;
+
+        context.strokeStyle = style.color;
+        const totalSegments = points.length - 1;
+        for (let index = 0; index < totalSegments; index++) {
+            const first = points[index];
+            const second = points[index + 1];
+            const averagePressure = (first.pressure + second.pressure) / 2;
+            context.lineWidth = Math.max(0.5, style.width * averagePressure);
+            context.lineCap = totalSegments === 1 || index === 0 || index === totalSegments - 1 ? 'round' : 'butt';
+            context.beginPath();
+            context.moveTo(first.x, first.y);
+            context.lineTo(second.x, second.y);
+            context.stroke();
         }
-        smoothed.push(points[points.length - 1]);
-        return smoothed;
+    }
+
+    private unsubscribeInputCallbacks(): void {
+        this.unsubscribeBridge?.();
+        this.liveUnsubscribeStart?.();
+        this.liveUnsubscribeUpdate?.();
+        this.unsubscribeBridge = null;
+        this.liveUnsubscribeStart = null;
+        this.liveUnsubscribeUpdate = null;
+    }
+
+    private currentStyle(): StrokeStyle {
+        return {
+            color: this.options.strokeColor,
+            width: this.options.strokeWidth
+        };
+    }
+
+    private currentStylingOptions() {
+        return {
+            ...this.currentStyle(),
+            stylusOnly: this.options.stylusOnly
+        };
+    }
+
+    private drawingTarget(): HTMLElement {
+        return this.canvas.parentElement || this.canvas;
+    }
+
+    private assertNotDestroyed(): void {
+        if (this.destroyed) throw new Error('OpenInkBridgeCanvas has been destroyed');
     }
 }
