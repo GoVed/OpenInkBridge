@@ -346,12 +346,18 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
         }
     }
 
-    private fun isTrustedMessageOrigin(origin: Uri): Boolean = when (origin.scheme?.lowercase()) {
-        "file" -> LOCAL_ASSET_ORIGIN in trustedOrigins
-        "https" -> runCatching { normalizeTrustedOrigin(origin.toString()) }
-            .getOrNull()
-            ?.let(trustedOrigins::contains) == true
-        else -> false
+    private fun isTrustedMessageOrigin(origin: Uri): Boolean {
+        val raw = origin.toString()
+        val scheme = origin.scheme?.lowercase()
+        if (raw == "null" || raw.isEmpty() || scheme == "file" || scheme == null) {
+            return LOCAL_ASSET_ORIGIN in trustedOrigins
+        }
+        return when (scheme) {
+            "https" -> runCatching { normalizeTrustedOrigin(raw) }
+                .getOrNull()
+                ?.let(trustedOrigins::contains) == true
+            else -> false
+        }
     }
 
     private fun enableOverlay(
@@ -399,9 +405,9 @@ class OpenInkBridgeWebView @JvmOverloads constructor(
             overlayCanvas?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
         }
 
-        applyDrawingLimit()
         overlayCanvas?.setStylusOnly(stylusOnly)
         overlayCanvas?.configureStroke(color, width)
+        applyDrawingLimit()
         overlayCanvas?.visibility = VISIBLE
         overlayCanvas?.bringToFront()
     }
