@@ -27,10 +27,16 @@ and run:
 npm run build:wasm
 ```
 
-That command generates `dist/wasm/openinkbridge_core.js` and its `.wasm` binary.
-The normal loader discovers those files at runtime. Applications with a custom
+That command writes durable bindings under `generated/wasm/` and copies
+`openinkbridge_core.js` and its `.wasm` binary into `dist/wasm/`. The normal
+loader discovers the distribution files at runtime. Applications with a custom
 asset pipeline can instead call `configureOpenInkBridgeWasmLoader(() => import(...))`
 before constructing a canvas.
+
+`initOpenInkBridgeWasm()` resolves `true` when bindings initialize and `false`
+when the generated module is absent or loading fails. It normally does not reject
+for this expected fallback case; use `isOpenInkBridgeWasmInitialized()` when a
+synchronous status check is needed.
 
 ## Lifecycle
 
