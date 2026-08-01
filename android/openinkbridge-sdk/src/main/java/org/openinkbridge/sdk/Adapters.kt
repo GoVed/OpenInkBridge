@@ -508,11 +508,21 @@ class OnyxBooxEpdAdapter : EpdAdapter, EpdAdapterIntrospection {
         }
     }
 
+    private fun getActiveLimitRect(targetView: View): android.graphics.Rect {
+        val limitRect = android.graphics.Rect()
+        val customLimit = drawingLimitRect
+        if (customLimit != null) {
+            limitRect.set(customLimit)
+        } else {
+            targetView.getLocalVisibleRect(limitRect)
+        }
+        return limitRect
+    }
+
     private fun updateLimitRect(targetView: View) {
         // Configure the drawing region once the view is laid out
         targetView.post {
-            val limitRect = android.graphics.Rect()
-            targetView.getLocalVisibleRect(limitRect)
+            val limitRect = getActiveLimitRect(targetView)
             if (limitRect.width() > 0 && limitRect.height() > 0) {
                 try {
                     // Correct Onyx setup sequence:
@@ -740,8 +750,7 @@ class OnyxBooxEpdAdapter : EpdAdapter, EpdAdapterIntrospection {
         try {
             if (touchHelper != null && view != null) {
                 val targetView = view!!
-                val limitRect = android.graphics.Rect()
-                targetView.getLocalVisibleRect(limitRect)
+                val limitRect = getActiveLimitRect(targetView)
                 
                 touchHelper?.closeRawDrawing()
                 touchHelper?.openRawDrawing()
@@ -758,7 +767,7 @@ class OnyxBooxEpdAdapter : EpdAdapter, EpdAdapterIntrospection {
                 touchHelper?.setRawDrawingRenderEnabled(true)
                 touchHelper?.setRawDrawingEnabled(true)
                 
-                OpenInkBridgeLogger.d(Subsystem.Backend, "BOOX", "TOUCH_HELPER_RECONFIGURED", "TouchHelper reconfigured with width=$width (hwWidth=$hwWidth), color=$color")
+                OpenInkBridgeLogger.d(Subsystem.Backend, "BOOX", "TOUCH_HELPER_RECONFIGURED", "TouchHelper reconfigured with width=$width (hwWidth=$hwWidth), color=$color, limitRect=$limitRect")
             }
         } catch (e: Exception) {
             OpenInkBridgeLogger.w(Subsystem.Backend, "BOOX", "TOUCH_HELPER_RECONFIG_FAILED", "Failed to update touchHelper stroke properties: ${e.message}")
