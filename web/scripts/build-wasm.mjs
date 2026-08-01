@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const webDirectory = resolve(scriptDirectory, '..');
 const coreDirectory = resolve(webDirectory, '..', 'core');
-const outputDirectory = resolve(webDirectory, 'dist', 'wasm');
+// Keep explicitly generated bindings outside dist. Normal builds may clean dist,
+// and sync-wasm.mjs copies this durable staging tree into release artifacts.
+const outputDirectory = resolve(webDirectory, 'generated', 'wasm');
+rmSync(outputDirectory, { recursive: true, force: true });
 mkdirSync(outputDirectory, { recursive: true });
 
 const executable = process.platform === 'win32' ? 'wasm-pack.exe' : 'wasm-pack';
