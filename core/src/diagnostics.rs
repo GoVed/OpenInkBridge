@@ -1,4 +1,4 @@
-use crate::logging::{get_ring_buffer_entries, LogEntry, LogLevel};
+use crate::logging::{LogEntry, LogLevel, get_ring_buffer_entries};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,7 +88,8 @@ pub fn collect_diagnostics(
         version: env!("CARGO_PKG_VERSION").to_string(),
         platform: detect_platform().to_string(),
         os: std::env::consts::OS.to_string(),
-        device_model: std::env::var("OPENINKBRIDGE_DEVICE").unwrap_or_else(|_| "Generic Device".to_string()),
+        device_model: std::env::var("OPENINKBRIDGE_DEVICE")
+            .unwrap_or_else(|_| "Generic Device".to_string()),
         selected_backend,
         available_backends,
         fallback_reason,
@@ -108,23 +109,70 @@ pub fn dump_configuration(report: &DiagnosticsReport) -> String {
     out.push_str(&format!("OS: {}\n", report.os));
     out.push_str(&format!("Device Model: {}\n", report.device_model));
     out.push_str(&format!("Selected Backend: {}\n", report.selected_backend));
-    out.push_str(&format!("Available Backends: {}\n", report.available_backends.join(", ")));
-    
+    out.push_str(&format!(
+        "Available Backends: {}\n",
+        report.available_backends.join(", ")
+    ));
+
     if let Some(ref reason) = report.fallback_reason {
         out.push_str(&format!("Fallback Reason: {}\n", reason));
     }
 
     out.push_str("Capabilities:\n");
-    out.push_str(&format!("  - Pressure: {}\n", if report.capabilities.pressure { "Supported" } else { "Unsupported" }));
-    out.push_str(&format!("  - Tilt: {}\n", if report.capabilities.tilt { "Supported" } else { "Unsupported" }));
-    out.push_str(&format!("  - Hover: {}\n", if report.capabilities.hover { "Supported" } else { "Unsupported" }));
-    out.push_str(&format!("  - Eraser: {}\n", if report.capabilities.eraser { "Supported" } else { "Unsupported" }));
-    out.push_str(&format!("  - Refresh Modes: [{}]\n", report.capabilities.refresh_modes.join(", ")));
-    out.push_str(&format!("  - Hardware Acceleration: {}\n", if report.capabilities.hardware_acceleration { "Enabled" } else { "Disabled" }));
+    out.push_str(&format!(
+        "  - Pressure: {}\n",
+        if report.capabilities.pressure {
+            "Supported"
+        } else {
+            "Unsupported"
+        }
+    ));
+    out.push_str(&format!(
+        "  - Tilt: {}\n",
+        if report.capabilities.tilt {
+            "Supported"
+        } else {
+            "Unsupported"
+        }
+    ));
+    out.push_str(&format!(
+        "  - Hover: {}\n",
+        if report.capabilities.hover {
+            "Supported"
+        } else {
+            "Unsupported"
+        }
+    ));
+    out.push_str(&format!(
+        "  - Eraser: {}\n",
+        if report.capabilities.eraser {
+            "Supported"
+        } else {
+            "Unsupported"
+        }
+    ));
+    out.push_str(&format!(
+        "  - Refresh Modes: [{}]\n",
+        report.capabilities.refresh_modes.join(", ")
+    ));
+    out.push_str(&format!(
+        "  - Hardware Acceleration: {}\n",
+        if report.capabilities.hardware_acceleration {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+    ));
 
     out.push_str(&format!("Refresh Mode: {}\n", report.refresh_mode));
-    out.push_str(&format!("Build Configuration: {}\n", report.build_configuration));
-    out.push_str(&format!("Feature Flags: [{}]\n", report.feature_flags.join(", ")));
+    out.push_str(&format!(
+        "Build Configuration: {}\n",
+        report.build_configuration
+    ));
+    out.push_str(&format!(
+        "Feature Flags: [{}]\n",
+        report.feature_flags.join(", ")
+    ));
     out.push_str("===============================================\n");
     out
 }
