@@ -25,7 +25,6 @@ export {
     StylingOptions,
     smoothStrokeJs
 } from './model';
-export { OpenInkBridgeCanvasComponent, OpenInkBridgeCanvasProps } from './react';
 export { logger, LogLevel, Subsystem, LogEntry } from './logger';
 export { collectDiagnostics, dumpConfiguration, createBugReport, DiagnosticsReport, CapabilitiesReport } from './diagnostics';
 export { SDK_VERSION } from './generated/version';

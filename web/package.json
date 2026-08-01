@@ -4,6 +4,29 @@
   "description": "Unified Web Bridge SDK for E-Ink low-latency stylus drawing",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./global": "./dist/index.global.js",
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "react": [
+        "dist/react.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist",
     "README.md"
@@ -13,13 +36,15 @@
   },
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "build:artifacts": "node scripts/generate-version.mjs && tsc && esbuild src/global.ts --bundle --format=iife --global-name=OpenInkBridge --outfile=dist/index.global.js",
+    "build:artifacts": "node scripts/generate-version.mjs && tsc && esbuild src/global.ts --bundle --format=iife --global-name=OpenInkBridge --outfile=dist/index.global.js && node scripts/sync-wasm.mjs",
     "build": "npm run clean && npm run build:artifacts",
     "build:wasm": "npm run clean && node scripts/build-wasm.mjs && npm run build:artifacts",
+    "clean:wasm": "node scripts/clean.mjs --wasm",
     "sync:android-sample": "node scripts/sync-android-sample.mjs",
     "check:android-sample": "node scripts/sync-android-sample.mjs --check",
-    "test": "npm run build && node --test --test-isolation=none test/web.test.cjs",
+    "test": "npm run build && node --test --test-isolation=none test/web.test.cjs && npm run test:package",
     "test:unit": "node --test --test-isolation=none test/web.test.cjs",
+    "test:package": "node scripts/package-smoke.mjs",
     "prepack": "npm run build"
   },
   "keywords": [
@@ -35,7 +60,12 @@
   "author": "OpenInkBridge Contributors",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+    "react": "^16.14.0 || ^17.0.0 || ^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/react": "18.3.31",
