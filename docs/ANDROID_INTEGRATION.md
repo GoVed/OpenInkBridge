@@ -73,13 +73,23 @@ If you want to package a local or remote webapp and sync drawing coordinates wit
 
 ```kotlin
 val bridgeWebView = findViewById<OpenInkBridgeWebView>(R.id.openInkBridgeWebView)
+
+// Local packaged content:
 bridgeWebView.webView.loadUrl("file:///android_asset/my_app/index.html")
+
+// Or, for remote content, allowlist the HTTPS origin before navigation:
+bridgeWebView.addTrustedOrigin("https://drawing.example.com")
+bridgeWebView.webView.loadUrl("https://drawing.example.com/editor")
 ```
 
 Inside the WebApp, developers use the `@openinkbridge/web` npm package to activate the writing mode.
-Only HTTPS origins can be added to the native bridge allowlist. The bridge is injected through an
+Remote origins in the native bridge allowlist must use HTTPS; the local Android asset origin is the
+only file exception. The bridge is injected through an
 origin-scoped AndroidX message listener and rejects iframe calls; unsupported WebView versions fall
-back to ordinary web pointer events. Call `bridgeWebView.destroy()` during final owner teardown.
+back to ordinary web pointer events. Local `file:///android_asset/` pages and
+`https://appassets.androidplatform.net` are trusted by default. DOM storage is disabled unless the
+owner opts in with `setDomStorageEnabled(true)`, and the exposed `webView` is a restricted controller
+that preserves the SDK's navigation policy.
 
 ---
 
@@ -91,41 +101,35 @@ Consumers should review that dependency's terms and security posture before dist
 it, and on other manufacturers, capability probing selects the Android fallback instead of
 advertising unavailable acceleration.
 
-`EpdAdapterManager` probes candidates selected from device information and keeps only an operational adapter:
-
-```kotlin
-activeAdapter = when {
-    manufacturer.contains("onyx") || brand.contains("onyx") -> OnyxBooxEpdAdapter()
-    else -> JetpackInkAdapter() // standard Android fallback
+```gradle
+dependencies {
+    runtimeOnly "com.onyx.android.sdk:onyxsdk-pen:1.5.4"
 }
 ```
 
-If Onyx Boox is detected and initialization succeeds, `OnyxBooxEpdAdapter` uses the Pen SDK and hooks selected system classes such as `EpdController`. Initialization failure is reported and falls back instead of advertising unavailable acceleration.
+`EpdAdapterManager` probes ordered candidates and keeps only an adapter that initializes
+successfully. On BOOX hardware, the Onyx adapter is eligible only when the application supplies the
+matching runtime dependency. Missing classes, probe failures, and initialization errors are reported
+and fall through to Jetpack motion prediction or the Canvas adapter.
 
 ---
 
 ## 5. View Lifecycle & E-Ink Flicker Prevention
 
-Direct EPD rendering updates the display in fast direct modes. When you exit an activity, these direct modes must be released. 
+Both custom views bind hardware resources when attached and release active strokes, raw-drawing
+state, and adapter resources when detached. Applications do not need to duplicate those window
+callbacks.
 
-The custom views automatically handle this inside window attachment hooks:
-
-```kotlin
-override fun onDetachedFromWindow() {
-    // Releases display locks, preventing screen flickers in background apps
-    epdAdapterManager.activeAdapter.endStroke()
-    epdAdapterManager.release()
-    super.onDetachedFromWindow()
-}
-```
-
----
+`release()` releases hardware resources but does not destroy the view; it can bind again after a
+later attachment. `OpenInkBridgeWebView.destroy()` is terminal: it removes the message listener,
+tears down the embedded WebView, and releases all native resources. Call `destroy()` only from the
+owning Activity or Fragment's final teardown, not during an ordinary detach/reattach cycle.
 
 ---
 
 ## 6. Hardware Touch Handoff & Focus Management
 
-When Onyx direct hardware drawing (`TouchHelper.setRawDrawingEnabled(true)`) is active, standard Android view invalidations outside the low-latency drawing bounds are held by the vendor's EPD driver.
+BOOX raw-drawing mode can interfere with normal Android updates outside the active ink region, so the SDK scopes that mode to drawing interactions.
 
 To ensure non-direct drawing areas (such as traditional whiteboard canvases or native UI toolbars) update smoothly in real time:
 
@@ -134,22 +138,41 @@ To ensure non-direct drawing areas (such as traditional whiteboard canvases or n
 
 ---
 
-## 7. Compiling the Rust Crate for JNI
+## 7. Optional Rust/JNI Smoothing
 
-To update the native stroke smoothing calculation library:
+The clean checkout does not ship a native `.so`; Android therefore uses the Kotlin implementation
+of the shared `0.25 / 0.50 / 0.25` smoothing contract by default. If an application packages a
+generated library for the device ABI, `CoreBridge` attempts JNI first and falls back to Kotlin when
+the library is absent, fails to load, or throws while processing a stroke. JNI exposes smoothing,
+not the separate Rust RDP simplifier.
 
-1. Install Android NDK targets in Rust:
+To generate the optional arm64 library:
+
+1. Install the Android NDK target in Rust:
    ```bash
-   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+   rustup target add aarch64-linux-android
    ```
-2. Install `cargo-ndk` compiler:
+2. Install `cargo-ndk`:
    ```bash
    cargo install cargo-ndk
    ```
-3. Run target compilation:
+3. Build from the repository's `core/` directory:
    ```bash
    cd core
    cargo ndk -t arm64-v8a -p 21 -- build --release --features android
    ```
-4. Copy the compiled JNI binary output (`libopeninkbridge_core.so`) into `openinkbridge-sdk/src/main/jniLibs/arm64-v8a/`.
+4. Copy `../target/aarch64-linux-android/release/libopeninkbridge_core.so` to
+   `../android/openinkbridge-sdk/src/main/jniLibs/arm64-v8a/` before building the AAR.
+
+The repository verification scripts do not generate or package this optional artifact.
+
+---
+
+## 8. Verification
+
+From `android/`, with JDK 17 and an Android SDK configured:
+
+```bash
+./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
 

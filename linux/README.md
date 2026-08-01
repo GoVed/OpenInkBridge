@@ -1,6 +1,6 @@
-# OpenInkBridge Linux Driver Interface (reMarkable / Kobo)
+# OpenInkBridge Linux Driver Interface (Experimental reMarkable 1/2)
 
-For Linux-based E-Ink devices (like the reMarkable 1/2/Paper Pro and Kobo e-readers), OpenInkBridge operates at the native system level rather than inside a virtual machine (like JVM/Android).
+The current Linux backend targets reMarkable 1 and 2 using evdev input and a monochrome framebuffer path. It is experimental and requires validation on each firmware image. reMarkable Paper Pro and Kobo support are planned; neither has a device-specific implementation in this repository.
 
 ## Execution Model
 
@@ -8,7 +8,7 @@ Because these devices do not run Android, they require native ELF binaries (writ
 
 ```
 +-------------------------------------------------------+
-|                OpenInkBridge C++/Rust App             |
+|                  OpenInkBridge Rust App               |
 |                                                       |
 |  +--------------------+       +--------------------+  |
 |  | Read input events  |       | Draw on Screen     |  |
@@ -19,16 +19,16 @@ Because these devices do not run Android, they require native ELF binaries (writ
 
 ## How It Works
 
-1. **Stylus Event Capture:** Read stylus coordinates, pressure, and tilt directly from Linux input devices (typically `/dev/input/event0` or `/dev/input/tsv`).
+1. **Stylus Event Capture:** Read stylus coordinates and pressure from a configurable Linux evdev device (default `/dev/input/event0`).
 2. **Display Control (EPDC):** Draw pixels directly to the framebuffer (`/dev/fb0`). 
 3. **EPD Refresh Trigger:** Use `ioctl` system calls on the framebuffer file descriptor to notify the hardware display controller (EPDC) to refresh the specific region where the drawing occurred, using low-latency waveform modes.
 
 ## Build and run
 
-Build the driver with hardware support enabled:
+From the repository root, build the driver with hardware refresh support enabled:
 
 ```sh
-cargo build --release --features remarkable
+cargo build --manifest-path linux/Cargo.toml --release --features remarkable
 ```
 
 Device paths are strict by default: startup fails if either device cannot be opened or mapped. Override paths and the bounded input batch size when a device exposes different nodes:
@@ -41,6 +41,12 @@ OPENINKBRIDGE_MAX_EVENTS_PER_POLL=128 \
 ```
 
 For host-side development only, set `OPENINKBRIDGE_REQUIRE_HARDWARE=false` to use the in-memory renderer and injected input events.
+
+Verify the package with:
+
+```sh
+cargo test --locked -p openinkbridge-linux --all-features
+```
 
 ## Quick-start API
 
@@ -75,6 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Community References
 
-Instead of re-inventing the low-level framebuffer rendering drivers from scratch, OpenInkBridge wrappers on Linux should link to:
-* **[libremarkable](https://github.com/reHackable/libremarkable):** A Rust library providing a full framework for reMarkable rendering and input handling.
+The `remarkable` feature uses `libremarkable` framebuffer types for hardware refresh requests. Related community projects include:
+
+* **[libremarkable](https://github.com/reHackable/libremarkable):** Rust framebuffer and device support for reMarkable hardware.
 * **[rmkit](https://github.com/isky/rmkit):** A C++ app development kit for the reMarkable paper tablet.

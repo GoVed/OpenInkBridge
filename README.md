@@ -1,8 +1,8 @@
 # OpenInkBridge
 
-OpenInkBridge is an open-source, unified SDK designed to abstract proprietary low-latency drawing APIs across various E-Ink devices (such as reMarkable, Onyx Boox, Bigme, and Supernote). 
+OpenInkBridge is an open-source SDK for presenting a consistent stylus and drawing API across E-Ink devices. Hardware integrations are enabled only after a backend successfully probes the current device; unsupported devices use an explicit software fallback.
 
-Its main goal is to empower developers to build **both native standalone apps and cross-platform WebApps** that run with near-zero latency on E-Ink hardware.
+Its main goal is to help developers build **both native standalone apps and cross-platform WebApps** with low-latency ink previews on E-Ink hardware. Actual latency depends on the device, firmware, and selected rendering path.
 
 ## Architecture Overview
 
@@ -24,25 +24,55 @@ To achieve low-latency drawing on E-Ink displays, OpenInkBridge uses a **Hybrid 
              +-----------------------+-----------------------+
              |                       |                       |
              v                       v                       v
-   [Onyx Boox Adapter]        [Bigme Adapter]       [libremarkable (Linux)]
+   [Onyx Boox Adapter]      [Android Fallback]      [reMarkable (Linux)]
              |                       |                       |
              v                       v                       v
-     Onyx Pen SDK / EPDC      Bigme Low-Latency API      Linux Framebuffer /dev/fb0
+     Onyx Pen SDK / EPDC       Canvas / Prediction       Linux Framebuffer / evdev
 ```
 
 ## Repository Structure
 
-* **[`core/`](./core)** - Shared Rust engine for stroke smoothing, pressure normalization, and Bezier calculations. Cross-compiles to WebAssembly (Wasm) and C/JNI libraries.
+* **[`core/`](./core)** - Shared Rust engine for stroke smoothing, optional Ramer-Douglas-Peucker simplification, models, diagnostics, and platform abstractions. Its smoothing API can be built for WebAssembly (Wasm) or JNI.
 * **[`android/`](./android)** - Android SDK (Kotlin library) providing `OpenInkBridgeView` and the low-latency hybrid `OpenInkBridgeWebView`.
 * **[`web/`](./web)** - Web Integration package (`@openinkbridge/web`) for HTML5 Canvas/SVG synchronization.
-* **[`linux/`](./linux)** - Linux native drivers (for reMarkable and Kobo tablets).
+* **[`linux/`](./linux)** - Linux native backend for reMarkable tablets. Kobo support is planned but not currently implemented.
 
 ## Features & Highlights
 
-* **Multi-Vendor Hardware Acceleration:** Automatic reflection-based hardware binding for Onyx Boox Pen SDK (TouchHelper / EpdController), Bigme Low-Latency API, and Android Jetpack Ink / MotionEventPredictor.
+* **Capability-Probed Rendering:** Onyx Boox Pen SDK acceleration where available, Android MotionEvent prediction or Canvas fallback elsewhere, and explicit degraded-mode diagnostics.
 * **Hybrid Touch Routing & Focus Handoff:** Seamlessly toggles hardware raw drawing scribbles when drawing inside low-latency regions, while instantly yielding display refresh control for standard/traditional views and UI components.
 * **Vector Path & Style Persistence:** Supports per-stroke color, width, and pressure-aware vector rendering with export options to Bitmap and SVG.
-* **Cross-Platform Math Core:** Double Exponential Smoothing and Ramer-Douglas-Peucker path simplification powered by shared Rust/Wasm/JNI algorithms.
+* **Consistent Stroke Smoothing:** Rust, JavaScript, and Kotlin use the same zero-phase `0.25 / 0.50 / 0.25` smoothing contract. Ramer-Douglas-Peucker simplification is a separate, opt-in Rust API and is not part of the Wasm or JNI smoothing surface.
+
+## Implementation Status
+
+| Platform | Status | Rendering path |
+| --- | --- | --- |
+| Onyx BOOX (Android) | Implemented, optional acceleration | Onyx Pen SDK when the app supplies the optional runtime; Android fallback otherwise |
+| Generic Android | Implemented | MotionEvent prediction / Canvas fallback |
+| Bigme and Supernote | Software fallback only | Generic Android path; vendor acceleration is not implemented |
+| reMarkable 1/2 | Experimental hardware backend | Linux evdev and framebuffer |
+| reMarkable Paper Pro | Planned / unvalidated | Current backend assumes reMarkable 1/2 input and monochrome framebuffer geometry |
+| Kobo | Planned | No backend in this repository yet |
+| Browser | Implemented | Pointer Events and HTML Canvas; native overlay when hosted by the Android bridge |
+
+"Implemented" describes a code path in this repository, not certification by a device manufacturer. See the platform integration guides for current limitations.
+
+## Development
+
+The repository pins its Rust and Node toolchains and provides one verification entry point per shell:
+
+```powershell
+.\scripts\verify.ps1
+```
+
+```sh
+./scripts/verify.sh
+```
+
+Verification formats, lints, tests, builds, and package-checks the Rust, Web, and Android projects. The Android checks require JDK 17 and an Android SDK; use `-SkipAndroid` in PowerShell or `SKIP_ANDROID=1` with the shell script when those tools are unavailable.
+
+The main verifier exercises the clean-checkout JavaScript and Kotlin smoothing fallbacks. Optional Wasm (`cd web && npm run build:wasm`) and JNI artifacts are generated separately and are not shipped or built by the repository verification scripts.
 
 ## Documentation
 

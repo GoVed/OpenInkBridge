@@ -1,6 +1,6 @@
 # OpenInkBridge Android SDK
 
-A unified, low-latency E-Ink drawing library for Android, featuring dynamic EPD display updates, raw stylus event intercepting, and optimized native stroke smoothing via JNI.
+A low-latency E-Ink drawing library for Android with dynamic EPD updates, raw stylus interception where supported, deterministic Kotlin stroke smoothing, and optional Rust/JNI acceleration.
 
 ## Directory Structure
 
@@ -98,14 +98,19 @@ and `https://appassets.androidplatform.net` are trusted by default. If an applic
 needs to show other content without native bridge access, set
 `untrustedNavigationPolicy = UntrustedNavigationPolicy.ALLOW_WITHOUT_NATIVE_BRIDGE`.
 The exposed `webView` property is a restricted navigation/evaluation facade, so applications
-cannot accidentally replace the mandatory security client. Call `destroy()` from the owning
-Activity or Fragment's final teardown; ordinary detach/reattach cycles are handled automatically.
+cannot accidentally replace the mandatory security client. `release()` frees hardware resources
+and permits later reattachment; call terminal `destroy()` from the owning Activity or Fragment's
+final teardown. Ordinary detach/reattach cycles are handled automatically.
 
 ---
 
-## 2. Compiling the Rust Core for Android (JNI)
+## 2. Optional Rust Core for Android (JNI)
 
-The library relies on an optimized Rust library for stroke smoothing. JNI libraries can be compiled for Android using `cargo-ndk`.
+A clean checkout contains no packaged `.so`, so the SDK uses its Kotlin implementation of the
+shared `0.25 / 0.50 / 0.25` smoothing contract by default. If an application supplies a generated
+library for the current ABI, `CoreBridge` attempts JNI first and falls back to Kotlin on missing,
+load, or execution failures. The JNI binding accelerates smoothing only; RDP simplification remains
+a separate Rust API.
 
 ### Prerequisites
 
@@ -113,9 +118,9 @@ The library relies on an optimized Rust library for stroke smoothing. JNI librar
    ```bash
    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
    ```
-2. Install the Android NDK compile targets:
+2. Install the arm64 Android target:
    ```bash
-   rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+   rustup target add aarch64-linux-android
    ```
 3. Install the compilation helper tool:
    ```bash
@@ -124,11 +129,10 @@ The library relies on an optimized Rust library for stroke smoothing. JNI librar
 
 ### Compilation
 
-From the repository root, run the compile script to build and copy the compiled `.so` binaries directly into the Android library module's `jniLibs` folder:
+From the repository root, build the optional arm64 library and copy it into the AAR source tree:
 
 ```bash
-# Navigate to core
-cd ../core
+cd core
 
 # Compile arm64 binary
 cargo ndk -t arm64-v8a -p 21 -- build --release --features android
@@ -137,19 +141,31 @@ cargo ndk -t arm64-v8a -p 21 -- build --release --features android
 mkdir -p ../android/openinkbridge-sdk/src/main/jniLibs/arm64-v8a
 
 # Copy output binary
-cp target/aarch64-linux-android/release/libopeninkbridge_core.so ../android/openinkbridge-sdk/src/main/jniLibs/arm64-v8a/
+cp ../target/aarch64-linux-android/release/libopeninkbridge_core.so ../android/openinkbridge-sdk/src/main/jniLibs/arm64-v8a/
 ```
 
-*Note: If the native shared library `.so` file is omitted, the SDK will automatically fallback to high-reliability Kotlin implementations of the stroke-smoothing algorithm, ensuring the application does not crash.*
+This artifact is generated locally; the repository and its normal verification scripts do not ship
+or build it.
 
 ---
 
-## 3. Sample Application (`app`)
+## 3. Build and Test
+
+With JDK 17 and an Android SDK configured, run from the repository root:
+
+```bash
+cd android
+./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+```
+
+---
+
+## 4. Sample Application (`app`)
 
 We provide a fully functional sample application inside the [`app/`](./app) folder. It showcases:
 * **Dual canvas rendering**: instantly toggle between the native drawing canvas (`OpenInkBridgeView`) and the hybrid webview canvas (`OpenInkBridgeWebView`).
 * **Interactive brush styling**: change color (Black, Red, Blue) and width (Thin, Medium, Thick).
-* **E-Ink direct-draw safety**: releases display locks immediately when views are detached or hidden.
+* **E-Ink direct-draw safety**: releases display locks on detach and performs final WebView teardown when the Activity is destroyed.
 
 To compile and run the sample application on your device:
 1. Open the `android/` directory in Android Studio.
