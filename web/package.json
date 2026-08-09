@@ -42,8 +42,8 @@
     "clean:wasm": "node scripts/clean.mjs --wasm",
     "sync:android-sample": "node scripts/sync-android-sample.mjs",
     "check:android-sample": "node scripts/sync-android-sample.mjs --check",
-    "test": "npm run build && node --test --test-isolation=none test/web.test.cjs && npm run test:package",
-    "test:unit": "node --test --test-isolation=none test/web.test.cjs",
+    "test": "npm run build && node --test test/web.test.cjs && npm run test:package",
+    "test:unit": "node --test test/web.test.cjs",
     "test:package": "node scripts/package-smoke.mjs",
     "prepack": "npm run build"
   },
