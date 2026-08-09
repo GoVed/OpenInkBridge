@@ -168,15 +168,13 @@ impl DisplayRenderer {
             match FramebufferMapping::open(&self.framebuffer_path, self.buffer.len()) {
                 Ok(framebuffer) => {
                     self.framebuffer = Some(framebuffer);
-                    return Ok(());
+                    Ok(())
                 }
-                Err(error) if self.require_framebuffer => {
-                    return Err(format!(
-                        "failed to initialize framebuffer {}: {error}",
-                        self.framebuffer_path.display()
-                    ));
-                }
-                Err(_) => return Ok(()),
+                Err(error) if self.require_framebuffer => Err(format!(
+                    "failed to initialize framebuffer {}: {error}",
+                    self.framebuffer_path.display()
+                )),
+                Err(_) => Ok(()),
             }
         }
 

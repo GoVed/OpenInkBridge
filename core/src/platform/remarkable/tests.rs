@@ -32,8 +32,8 @@ fn test_coordinate_conversion() {
 
     // Test origin (0, 0) raw digitizer input
     let (x0, y0) = transform.transform(0.0, 0.0);
-    assert!(x0 >= 0.0 && x0 <= 1404.0);
-    assert!(y0 >= 0.0 && y0 <= 1872.0);
+    assert!((0.0..=1404.0).contains(&x0));
+    assert!((0.0..=1872.0).contains(&y0));
 
     // Test max extent digitizer input (20967, 15725)
     let (x_max, y_max) = transform.transform(15725.0, 20967.0);

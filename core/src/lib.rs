@@ -183,9 +183,9 @@ mod stroke_processing_tests {
     fn simplification_retains_shape_and_endpoints() {
         let input = vec![
             point(0.0, 0.0, 0.5, 0),
-            point(1.0, 0.01, 0.5, 1),
+            point(1.0, 1.01, 0.5, 1),
             point(2.0, 2.0, 0.5, 2),
-            point(3.0, 2.01, 0.5, 3),
+            point(3.0, 0.99, 0.5, 3),
             point(4.0, 0.0, 0.5, 4),
         ];
 
@@ -357,7 +357,7 @@ pub mod android {
 
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_org_openinkbridge_sdk_CoreBridge_getRingBufferLogsJson(
-        mut env: JNIEnv,
+        env: JNIEnv,
         _class: JClass,
     ) -> jstring {
         let logs = logging::get_ring_buffer_entries();
