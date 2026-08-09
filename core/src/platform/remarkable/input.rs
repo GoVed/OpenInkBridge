@@ -105,6 +105,7 @@ impl EvdevEventDecoder {
         self.record_size
     }
 
+    #[allow(dead_code)]
     pub(crate) fn pending_len(&self) -> usize {
         self.pending.len()
     }
