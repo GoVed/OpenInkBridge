@@ -30,8 +30,13 @@ To achieve low-latency drawing on E-Ink displays, OpenInkBridge uses a **Hybrid 
      Onyx Pen SDK / EPDC       Canvas / Prediction       Linux Framebuffer / evdev
 ```
 
+## OpenInk Protocol Specification
+
+OpenInkBridge implements the **[OpenInk Protocol (OIP) Specification v0.1](./spec/OIP_SPECIFICATION_v0.1.md)**, a language-agnostic IETF/W3C-style standard defining hardware capability probing schemas, binary stroke streaming packet formats, EPDC waveform refresh commands, and hybrid touch routing state machines.
+
 ## Repository Structure
 
+* **[`spec/`](./spec)** - Formal OpenInk Protocol (OIP) v0.1 Working Draft specification (`OIP_SPECIFICATION_v0.1.md`).
 * **[`core/`](./core)** - Shared Rust engine for stroke smoothing, optional Ramer-Douglas-Peucker simplification, models, diagnostics, and platform abstractions. Its smoothing API can be built for WebAssembly (Wasm) or JNI.
 * **[`android/`](./android)** - Android SDK (Kotlin library) providing `OpenInkBridgeView` and the low-latency hybrid `OpenInkBridgeWebView`.
 * **[`web/`](./web)** - Web Integration package (`@openinkbridge/web`) for HTML5 Canvas/SVG synchronization.
