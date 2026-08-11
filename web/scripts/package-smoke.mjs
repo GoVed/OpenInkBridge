@@ -56,15 +56,15 @@ try {
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const sdk = require('@openinkbridge/web');
+const sdk = require('openinkbridge-web');
 
 assert.equal(typeof sdk.OpenInkBridgeCanvas, 'function');
 assert.equal(typeof sdk.SDK_VERSION, 'string');
 assert.equal(sdk.OpenInkBridgeCanvasComponent, undefined, 'React must not leak from the vanilla root');
-assert.doesNotThrow(() => require.resolve('@openinkbridge/web/react'));
+assert.doesNotThrow(() => require.resolve('openinkbridge-web/react'));
 assert.equal(fs.existsSync(path.join(__dirname, 'node_modules', 'react')), false, 'optional React peer must not be installed');
 
-const manifestPath = require.resolve('@openinkbridge/web/package.json');
+const manifestPath = require.resolve('openinkbridge-web/package.json');
 const packageRoot = path.dirname(manifestPath);
 assert.equal(fs.existsSync(path.join(packageRoot, 'dist', 'wasm', 'openinkbridge_wasm_pack_smoke.js')), true);
 assert.equal(fs.readFileSync(path.join(packageRoot, 'dist', 'index.d.ts'), 'utf8').includes("from './react'"), false);
@@ -76,19 +76,19 @@ fs.mkdirSync(reactDirectory, { recursive: true });
 fs.writeFileSync(path.join(reactDirectory, 'package.json'), JSON.stringify({ name: 'react', version: '18.3.1', main: 'index.js' }));
 fs.writeFileSync(path.join(reactDirectory, 'index.js'), 'exports.useEffect = () => {}; exports.useRef = value => ({ current: value });');
 fs.writeFileSync(path.join(reactDirectory, 'jsx-runtime.js'), 'exports.jsx = () => null; exports.jsxs = exports.jsx;');
-const reactSdk = require('@openinkbridge/web/react');
+const reactSdk = require('openinkbridge-web/react');
 assert.equal(typeof reactSdk.OpenInkBridgeCanvasComponent, 'function');
 `, 'utf8');
 
     writeFileSync(join(consumerDirectory, 'smoke.mjs'), `
-const sdk = await import('@openinkbridge/web');
+const sdk = await import('openinkbridge-web');
 if (typeof sdk.OpenInkBridgeCanvas !== 'function') {
     throw new Error('ES module import did not expose the vanilla SDK');
 }
 `, 'utf8');
 
     writeFileSync(join(consumerDirectory, 'smoke.ts'), `
-import { OpenInkBridgeCanvas, SDK_VERSION } from '@openinkbridge/web';
+import { OpenInkBridgeCanvas, SDK_VERSION } from 'openinkbridge-web';
 const CanvasConstructor: typeof OpenInkBridgeCanvas = OpenInkBridgeCanvas;
 const version: string = SDK_VERSION;
 void CanvasConstructor;

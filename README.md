@@ -39,7 +39,7 @@ OpenInkBridge implements the **[OpenInk Protocol (OIP) Specification v0.1](./spe
 * **[`spec/`](./spec)** - Formal OpenInk Protocol (OIP) v0.1 Working Draft specification (`OIP_SPECIFICATION_v0.1.md`).
 * **[`core/`](./core)** - Shared Rust engine for stroke smoothing, optional Ramer-Douglas-Peucker simplification, models, diagnostics, and platform abstractions. Its smoothing API can be built for WebAssembly (Wasm) or JNI.
 * **[`android/`](./android)** - Android SDK (Kotlin library) providing `OpenInkBridgeView` and the low-latency hybrid `OpenInkBridgeWebView`.
-* **[`web/`](./web)** - Web Integration package (`@openinkbridge/web`) for HTML5 Canvas/SVG synchronization.
+* **[`web/`](./web)** - Web Integration package (`openinkbridge-web`) for HTML5 Canvas/SVG synchronization.
 * **[`linux/`](./linux)** - Linux native backend for reMarkable tablets. Kobo support is planned but not currently implemented.
 
 ## Features & Highlights

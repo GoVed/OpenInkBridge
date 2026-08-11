@@ -8,7 +8,7 @@ Below are the detailed integration guides:
 
 * **[OpenInk Protocol (OIP) Specification v0.1](../spec/OIP_SPECIFICATION_v0.1.md)**: Formal IETF/W3C Working Draft specification defining hardware probing JSON schemas, 32-byte binary stroke packets, EPDC waveform control, and hybrid touch routing state machines.
 * **[Developer Diagnostics & Logging Guide](./DEVELOPER_DIAGNOSTICS.md)**: Structured logging system, log levels, categories, in-memory ring buffer, diagnostics collection, configuration dumping, and bug report generation.
-* **[Web & WebApp Integration Guide](./WEB_INTEGRATION.md)**: Integrating `@openinkbridge/web` inside HTML5 Canvas, React components, and handling browser pointer fallbacks.
+* **[Web & WebApp Integration Guide](./WEB_INTEGRATION.md)**: Integrating `openinkbridge-web` inside HTML5 Canvas, React components, and handling browser pointer fallbacks.
 * **[Android SDK Integration Guide](./ANDROID_INTEGRATION.md)**: Adding `OpenInkBridgeView` and `OpenInkBridgeWebView`, opting into BOOX acceleration, handling lifecycle, and optionally generating JNI artifacts.
 * **[reMarkable Integration Guide](./remarkable.md)**: Experimental reMarkable 1/2 backend design and `armv7-unknown-linux-gnueabihf` build instructions. Paper Pro support is planned but unvalidated.
 * **[Linux Native Client Integration Guide](./LINUX_INTEGRATION.md)**: Understanding the experimental reMarkable backend's nonblocking evdev input and framebuffer rendering pipeline. Kobo support is planned.
