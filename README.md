@@ -1,5 +1,11 @@
 # OpenInkBridge
 
+[![OpenInk Protocol Specification](https://img.shields.io/badge/OpenInk%20Protocol-v0.1%20Spec-blue.svg)](./spec/OIP_SPECIFICATION_v0.1.md)
+[![npm version](https://img.shields.io/npm/v/openinkbridge-web.svg?color=cb3837)](https://www.npmjs.com/package/openinkbridge-web)
+[![crates.io version](https://img.shields.io/crates/v/openinkbridge-core.svg?color=fc8d62)](https://crates.io/crates/openinkbridge-core)
+[![JitPack](https://img.shields.io/jitpack/v/github/GoVed/OpenInkBridge.svg?color=22c55e)](https://jitpack.io/#GoVed/OpenInkBridge)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)
+
 OpenInkBridge is an open-source SDK for presenting a consistent stylus and drawing API across E-Ink devices. Hardware integrations are enabled only after a backend successfully probes the current device; unsupported devices use an explicit software fallback.
 
 Its main goal is to help developers build **both native standalone apps and cross-platform WebApps** with low-latency ink previews on E-Ink hardware. Actual latency depends on the device, firmware, and selected rendering path.
