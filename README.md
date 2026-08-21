@@ -1,6 +1,6 @@
 # OpenInkBridge
 
-[![OpenInk Protocol Specification](https://img.shields.io/badge/OpenInk%20Protocol-v0.1%20Spec-blue.svg)](./spec/OIP_SPECIFICATION_v0.1.md)
+[![OpenInk Protocol Specification](https://img.shields.io/badge/OpenInk%20Protocol-v0.2%20Spec-blue.svg)](./spec/OIP_SPECIFICATION_v0.2.md)
 [![npm version](https://img.shields.io/npm/v/openinkbridge-web.svg?color=cb3837)](https://www.npmjs.com/package/openinkbridge-web)
 [![crates.io version](https://img.shields.io/crates/v/openinkbridge-core.svg?color=fc8d62)](https://crates.io/crates/openinkbridge-core)
 [![JitPack](https://img.shields.io/jitpack/v/github/GoVed/OpenInkBridge.svg?color=22c55e)](https://jitpack.io/#GoVed/OpenInkBridge)
@@ -38,11 +38,11 @@ To achieve low-latency drawing on E-Ink displays, OpenInkBridge uses a **Hybrid 
 
 ## OpenInk Protocol Specification
 
-OpenInkBridge implements the **[OpenInk Protocol (OIP) Specification v0.1](./spec/OIP_SPECIFICATION_v0.1.md)**, a language-agnostic IETF/W3C-style standard defining hardware capability probing schemas, binary stroke streaming packet formats, EPDC waveform refresh commands, and hybrid touch routing state machines.
+OpenInkBridge implements the **[OpenInk Protocol (OIP) Specification v0.2](./spec/OIP_SPECIFICATION_v0.2.md)** (with [`v0.1`](./spec/OIP_SPECIFICATION_v0.1.md) available as prior draft), a language-agnostic standard defining the high-level JSON bridge protocol, multi-canvas session routing, 32-byte binary streaming frames, EPDC waveform refresh commands, and hybrid touch routing state machines.
 
 ## Repository Structure
 
-* **[`spec/`](./spec)** - Formal OpenInk Protocol (OIP) v0.1 Working Draft specification (`OIP_SPECIFICATION_v0.1.md`).
+* **[`spec/`](./spec)** - Formal OpenInk Protocol (OIP) Working Draft specifications ([`OIP_SPECIFICATION_v0.2.md`](./spec/OIP_SPECIFICATION_v0.2.md) and [`v0.1`](./spec/OIP_SPECIFICATION_v0.1.md)).
 * **[`core/`](./core)** - Shared Rust engine for stroke smoothing, optional Ramer-Douglas-Peucker simplification, models, diagnostics, and platform abstractions. Its smoothing API can be built for WebAssembly (Wasm) or JNI.
 * **[`android/`](./android)** - Android SDK (Kotlin library) providing `OpenInkBridgeView` and the low-latency hybrid `OpenInkBridgeWebView`.
 * **[`web/`](./web)** - Web Integration package (`openinkbridge-web`) for HTML5 Canvas/SVG synchronization.
