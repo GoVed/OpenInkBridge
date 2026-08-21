@@ -489,6 +489,7 @@ For web browsers and IPC-bound microservices (using WebSockets, Android WebMessa
 
 ## 7. References
 
-* **[RFC 2119]** Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.
-* **[JSON Schema Draft-07]** Wright, A., Andrews, H., Hutton, B., "JSON Schema Validation: A Vocabulary for Structural Validation of JSON", Draft-07, 2020.
-* **[W3C Pointer Events]** W3C Recommendation, "Pointer Events - Level 3", 2023.
+* **[RFC 2119]** Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <https://www.rfc-editor.org/info/rfc2119>.
+* **[RFC 8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+* **[JSON Schema Draft-07]** Andrews, H., Wright, A., "JSON Schema Validation: A Vocabulary for Structural Validation of JSON", Internet-Draft `draft-handrews-json-schema-validation-01`, March 2018, <https://json-schema.org/draft-07/json-schema-validation.html>.
+* **[W3C Pointer Events]** Lauke, P. H., Flack, R., Eds., "Pointer Events - Level 3", W3C Recommendation, June 2026, <https://www.w3.org/TR/pointerevents3/>.

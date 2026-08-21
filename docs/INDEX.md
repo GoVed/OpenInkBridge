@@ -6,7 +6,7 @@ Below are the detailed integration guides:
 
 ## 1. Protocol Specification & Integration Guides
 
-* **[OpenInk Protocol (OIP) Specification v0.1](../spec/OIP_SPECIFICATION_v0.1.md)**: Formal IETF/W3C Working Draft specification defining hardware probing JSON schemas, 32-byte binary stroke packets, EPDC waveform control, and hybrid touch routing state machines.
+* **[OpenInk Protocol (OIP) Specification v0.2](../spec/OIP_SPECIFICATION_v0.2.md)**: Formal Working Draft specification defining dual-profile architecture (high-level JSON bridge for Web/Android and low-level binary streaming for Linux/embedded), multi-canvas session routing, EPDC refresh modes, and stroke math contracts. Prior draft: [`v0.1`](../spec/OIP_SPECIFICATION_v0.1.md).
 * **[Developer Diagnostics & Logging Guide](./DEVELOPER_DIAGNOSTICS.md)**: Structured logging system, log levels, categories, in-memory ring buffer, diagnostics collection, configuration dumping, and bug report generation.
 * **[Web & WebApp Integration Guide](./WEB_INTEGRATION.md)**: Integrating `openinkbridge-web` inside HTML5 Canvas, React components, and handling browser pointer fallbacks.
 * **[Android SDK Integration Guide](./ANDROID_INTEGRATION.md)**: Adding `OpenInkBridgeView` and `OpenInkBridgeWebView`, opting into BOOX acceleration, handling lifecycle, and optionally generating JNI artifacts.
