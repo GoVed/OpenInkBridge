@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wasm-bindgen = { version = "0.2", optional = true }
-jni = { version = "0.21.1", optional = true }
+jni = { version = "0.22.4", optional = true }
 libc = { version = "0.2", optional = true }
 libremarkable = { version = "0.7", optional = true, default-features = false, features = ["framebuffer-types"] }
 
