@@ -80,7 +80,7 @@ jobs:
           name: OpenInkBridge-Sample-Debug-APK
           path: release
       - name: Create GitHub debug APK prerelease
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             release/openinkbridge-sample-debug.apk
